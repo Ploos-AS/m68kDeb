@@ -1,0 +1,15 @@
+[fs-uae]
+amiga_model = A3000
+kickstart_file = internal
+kickstart_setup = 0
+fullscreen = 0
+window_width = 752
+window_height = 576
+uae_cpu_speed = max
+logs_dir = out/m1-3a/logs
+screenshots_dir = out/m1-3a/screenshots
+
+# M1.3a.1 intentionally contains no proprietary ROM path. FS-UAE's
+# `internal` Kickstart selection uses its AROS replacement ROM.
+# The complete m68kDeb boot bundle is attached in the next runtime step;
+# this profile first establishes that the public CI emulator harness starts.
