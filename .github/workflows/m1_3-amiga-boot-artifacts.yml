@@ -1,0 +1,64 @@
+name: M1.3 Amiga boot artifacts
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/m1_3-amiga-boot-artifacts.yml'
+      - 'kernel/build-amiga.sh'
+      - 'initramfs/build-amiga.sh'
+      - 'platforms/amiga/**'
+      - 'Makefile'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bc bison build-essential ca-certificates cpio curl dpkg-dev flex \
+            gcc-m68k-linux-gnu gzip libelf-dev libssl-dev make xz-utils
+
+      - name: Build Amiga kernel
+        run: sh kernel/build-amiga.sh
+
+      - name: Build installer initramfs
+        run: sh initramfs/build-amiga.sh
+
+      - name: Assemble M1.3 boot artifact
+        run: |
+          mkdir -p out/m68kdeb-amiga
+          cp out/kernel-amiga/vmlinuz-m68k-amiga out/m68kdeb-amiga/
+          cp out/initramfs-amiga/initramfs-m68kdeb.gz out/m68kdeb-amiga/
+          cp platforms/amiga/Start-m68kDeb out/m68kdeb-amiga/
+          cp platforms/amiga/Start-m68kDeb-Serial out/m68kdeb-amiga/
+          chmod +x out/m68kdeb-amiga/Start-m68kDeb out/m68kdeb-amiga/Start-m68kDeb-Serial
+          {
+            echo 'M1.3 build provenance'
+            echo "git=${GITHUB_SHA}"
+            echo "workflow_run=${GITHUB_RUN_ID}"
+            echo -n 'kernel_version='; cat out/kernel-amiga/VERSION
+            echo -n 'kernel_source='; cat out/kernel-amiga/SOURCE_URL
+            echo -n 'busybox_source='; cat out/initramfs-amiga/BUSYBOX_SOURCE_URL
+          } > out/m68kdeb-amiga/PROVENANCE.txt
+          (cd out/m68kdeb-amiga && sha256sum vmlinuz-m68k-amiga initramfs-m68kdeb.gz Start-m68kDeb Start-m68kDeb-Serial PROVENANCE.txt > SHA256SUMS)
+          sh scripts/check-amiga-bootstrap.sh out/m68kdeb-amiga
+
+      - name: Upload M1.3 boot artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: m1-3-amiga-boot-${{ github.sha }}
+          path: |
+            out/m68kdeb-amiga/
+            out/kernel-amiga/kernel.config
+            out/kernel-amiga/System.map
+            out/kernel-amiga/linux-source.SHA256
+            out/initramfs-amiga/busybox-static.SHA256
+          if-no-files-found: error
+          retention-days: 14
