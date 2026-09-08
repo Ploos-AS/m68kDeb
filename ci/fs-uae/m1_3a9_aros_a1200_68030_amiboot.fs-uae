@@ -1,8 +1,8 @@
 [fs-uae]
 amiga_model = A1200
 cpu = 68030
-kickstart_file = out/m1-3a9/aros-root/boot/amiga/aros-rom.bin
-kickstart_ext_file = out/m1-3a9/aros-root/boot/amiga/aros-ext.bin
+kickstart_file = out/m1-3a9/rom/aros-rom.bin
+kickstart_ext_file = out/m1-3a9/rom/aros-ext.bin
 uae_cpu_speed = real
 hard_drive_0 = out/m1-3a9/aros-root
 hard_drive_0_label = System
@@ -14,7 +14,7 @@ window_height = 576
 logs_dir = out/m1-3a9/logs
 screenshots_dir = out/m1-3a9/screenshots
 
-# M1.3a.8 qualified this exact A1200 + generic 68030/MMU + matching AROS
-# nightly ROM pair to Startup-Sequence. M1.3a.9 extends that known-good boot
-# boundary through amiboot, Linux and the m68kDeb initramfs userspace marker.
+# M1.3a.8 qualified this exact A1200 + generic 68030/MMU topology with the
+# matching AROS nightly ROM pair kept outside the writable DH0 directory tree.
+# M1.3a.9 preserves that boot boundary and adds amiboot, Linux and initramfs.
 # No proprietary Commodore/Amiga ROM and no accelerator-specific ROM is used.
