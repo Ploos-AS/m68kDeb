@@ -29,7 +29,7 @@ xorriso -osirrox on -indev "$ISO" -extract / "$OUT/aros-root" >/dev/null 2>&1
 # CI copy that must be writable so we can inject m68kDeb and replace Startup-Sequence.
 chmod -R u+rwX "$OUT/aros-root"
 
-for f in boot/amiga/aros-rom.bin boot/amiga/aros-ext.bin S/Startup-Sequence C/Stack C/Echo; do
+for f in boot/amiga/aros-rom.bin boot/amiga/aros-ext.bin S/Startup-Sequence C/Stack C/Echo C/CD; do
   [ -e "$OUT/aros-root/$f" ] || { echo "missing AROS runtime file: $f" >&2; exit 1; }
 done
 
@@ -46,7 +46,8 @@ cp "$OUT/aros-root/S/Startup-Sequence" "$OUT/ORIGINAL-Startup-Sequence"
 cat > "$OUT/aros-root/S/Startup-Sequence" <<'EOF'
 C:Stack 100000
 C:Echo "m68kDeb M1.3a.3 AROS bootstrap"
-SYS:m68kdeb/amiboot -d -k SYS:m68kdeb/vmlinux-m68k-amiga -r SYS:m68kdeb/initramfs-m68kdeb.gz root=/dev/ram video=pal console=ttyS0,9600n8
+C:CD SYS:m68kdeb
+SYS:m68kdeb/amiboot -d -k vmlinux-m68k-amiga -r initramfs-m68kdeb.gz root=/dev/ram video=pal console=ttyS0,9600n8
 C:Echo "M1.3a.3: amiboot returned unexpectedly"
 C:Wait 30
 EOF
@@ -57,6 +58,9 @@ EOF
   echo "aros_iso_sha256=$AROS_ISO_SHA256"
   echo "kickstart_file=$OUT/aros-root/boot/amiga/aros-rom.bin"
   echo "kickstart_ext_file=$OUT/aros-root/boot/amiga/aros-ext.bin"
+  echo "amiboot_workdir=SYS:m68kdeb"
+  echo "amiboot_kernel=vmlinux-m68k-amiga"
+  echo "amiboot_initramfs=initramfs-m68kdeb.gz"
   sha256sum "$OUT/aros-root/m68kdeb/amiboot" \
     "$OUT/aros-root/m68kdeb/vmlinux-m68k-amiga" \
     "$OUT/aros-root/m68kdeb/initramfs-m68kdeb.gz"
