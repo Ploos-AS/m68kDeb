@@ -1,0 +1,18 @@
+[fs-uae]
+amiga_model = A1200
+cpu = 68040
+kickstart_file = internal
+uae_cpu_speed = real
+hard_drive_0 = out/m1-3a7/aros-root
+hard_drive_0_label = System
+hard_drive_0_read_only = 0
+serial_port = /tmp/m68kdeb-fsuae-serial
+fullscreen = 0
+window_width = 752
+window_height = 576
+logs_dir = out/m1-3a7/logs
+screenshots_dir = out/m1-3a7/screenshots
+
+# M1.3a.5 failed with 68030+MMU while M1.3a.6 passed with 68EC030/no-MMU.
+# This boundary test keeps the same A1200/internal-AROS/pinned-system setup but
+# changes the CPU/MMU implementation to 68040+MMU. No accelerator-specific ROM.
