@@ -9,5 +9,13 @@ platforms: [amiga, atari, mac68k]
 installer_strategy: m68kdeb
 source:
   type: debian-ports
-  notes: "Resolve and pin the active Debian Ports suites/endpoints at build or qualification time."
+  mirror: https://deb.debian.org/debian-ports
+  architecture: m68k
+  suites:
+    - unstable
+    - unreleased
+  components:
+    - main
+  keyring_package: debian-ports-archive-keyring
+  notes: "unstable is the normal runtime suite; unreleased is retained for bootstrap/build cases where m68k porter packages are required. Qualification must record exact Release metadata used."
 qualification: unverified
