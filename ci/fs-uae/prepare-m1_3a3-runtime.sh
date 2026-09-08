@@ -25,6 +25,9 @@ ISO=$(find "$OUT/download/extracted" -type f -name '*.iso' | head -n 1 || true)
 printf '%s  %s\n' "$AROS_ISO_SHA256" "$ISO" | sha256sum -c -
 
 xorriso -osirrox on -indev "$ISO" -extract / "$OUT/aros-root" >/dev/null 2>&1
+# ISO extraction preserves read-only media permissions. This tree is a disposable
+# CI copy that must be writable so we can inject m68kDeb and replace Startup-Sequence.
+chmod -R u+rwX "$OUT/aros-root"
 
 for f in boot/amiga/aros-rom.bin boot/amiga/aros-ext.bin S/Startup-Sequence C/Stack C/Echo; do
   [ -e "$OUT/aros-root/$f" ] || { echo "missing AROS runtime file: $f" >&2; exit 1; }
