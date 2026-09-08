@@ -17,12 +17,13 @@ need() {
 need mmdebstrap
 need tar
 need xz
+need sha256sum
 
 mkdir -p "$(dirname "$OUT")" "$WORK"
 
-# The build is intentionally explicit about both Debian Ports suites.  The
+# The build is intentionally explicit about both Debian Ports suites. The
 # bootstrap starts from unstable and makes unreleased available for porter
-# packages needed by m68k.  Signature checking is left enabled; callers must
+# packages needed by m68k. Signature checking is left enabled; callers must
 # provide a host with the Debian Ports archive keyring installed.
 mmdebstrap \
     --architectures="$ARCH" \
