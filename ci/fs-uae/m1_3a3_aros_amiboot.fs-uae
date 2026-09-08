@@ -1,6 +1,7 @@
 [fs-uae]
 amiga_model = A3000
 kickstart_file = internal
+uae_cpu_speed = real
 hard_drive_0 = out/m1-3a3/aros-root
 hard_drive_0_label = System
 hard_drive_0_read_only = 0
@@ -11,13 +12,13 @@ window_height = 576
 logs_dir = out/m1-3a3/logs
 screenshots_dir = out/m1-3a3/screenshots
 
-# Keep the A3000 close to FS-UAE defaults for AROS bootstrap qualification.
-# Do not force motherboard RAM or max CPU speed until bootstrap stability is
-# proven.
+# A3000 defaults select max CPU speed in FS-UAE. Run #6 still showed
+# cpu_speed=max and a "Bad PMOVE" while AROS was booting, so make the
+# conservative timing choice explicit rather than relying on model defaults.
+# Keep the CPU/MMU model, AROS system root, PTY capture and amiboot path
+# unchanged so this run changes one runtime variable only.
 #
 # Use FS-UAE's built-in AROS replacement ROM while retaining the pinned AROS
-# nightly system/root extracted by prepare-m1_3a3-runtime.sh. This isolates
-# the explicit nightly ROM/ext-ROM pair implicated by runs #4 and #5 without
-# changing the machine profile, root filesystem, PTY capture, or amiboot path.
-# No proprietary Commodore/Amiga ROM is used.
+# nightly system/root extracted by prepare-m1_3a3-runtime.sh. No proprietary
+# Commodore/Amiga ROM is used.
 # CI provides /tmp/m68kdeb-fsuae-serial as one end of a socat PTY pair.
