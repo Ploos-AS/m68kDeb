@@ -1,4 +1,4 @@
-name: M1.3a.5 AROS A1200 1230 boot-only qualification
+name: M1.3a.5 AROS A1200 generic 68030 boot-only qualification
 
 on:
   workflow_dispatch:
@@ -26,10 +26,10 @@ jobs:
             ca-certificates curl fs-uae scrot socat unzip xvfb xorriso
           fs-uae --version
 
-      - name: Prepare pinned AROS A1200/1230 boot-only root
+      - name: Prepare pinned AROS A1200 generic 68030 boot-only root
         run: sh ci/fs-uae/prepare-m1_3a5-boot-only.sh
 
-      - name: Boot AROS A1200/1230 to Startup-Sequence boundary
+      - name: Boot AROS A1200 generic 68030 to Startup-Sequence boundary
         run: |
           mkdir -p out/m1-3a5/logs out/m1-3a5/screenshots
           rm -f /tmp/m68kdeb-fsuae-serial /tmp/m68kdeb-capture-serial
@@ -92,8 +92,10 @@ jobs:
             echo "result=PASS"
             echo "git=${GITHUB_SHA}"
             echo "workflow_run=${GITHUB_RUN_ID}"
-            echo "machine=A1200/1230"
+            echo "machine=A1200"
             echo "cpu=68030+MMU"
+            echo "accelerator=none"
+            echo "accelerator_rom=none"
             echo "cpu_speed=real"
             echo "rom=FS-UAE internal AROS replacement ROM"
             echo "aros_system=AROS-20260908 amiga-m68k nightly"
@@ -110,7 +112,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: m1-3a5-aros-a1200-1230-boot-only-${{ github.sha }}
+          name: m1-3a5-aros-a1200-generic-68030-boot-only-${{ github.sha }}
           path: |
             out/m1-3a5/RESULT.txt
             out/m1-3a5/RUNTIME_PROVENANCE.txt
