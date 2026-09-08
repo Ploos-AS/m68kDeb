@@ -1,0 +1,21 @@
+[fs-uae]
+amiga_model = A1200
+cpu = 68030
+kickstart_file = out/m1-3a8/rom/aros-rom.bin
+kickstart_ext_file = out/m1-3a8/rom/aros-ext.bin
+uae_cpu_speed = real
+hard_drive_0 = out/m1-3a8/aros-root
+hard_drive_0_label = System
+hard_drive_0_read_only = 0
+serial_port = /tmp/m68kdeb-fsuae-serial
+fullscreen = 0
+window_width = 752
+window_height = 576
+logs_dir = out/m1-3a8/logs
+screenshots_dir = out/m1-3a8/screenshots
+
+# M1.3a.5 and M1.3a.7 showed that FS-UAE's built-in 2015 AROS ROM stalls
+# during MMU initialization with 68030 and 68040. This qualification keeps
+# the generic A1200 + 68030 + MMU profile, but replaces the built-in ROM pair
+# with aros-rom.bin and aros-ext.bin extracted from the same pinned 2026-09-08
+# AROS nightly as the system files. No proprietary ROM or accelerator ROM is used.
