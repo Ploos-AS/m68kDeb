@@ -11,6 +11,7 @@ A generated bootstrap directory must contain:
 ```text
 m68kdeb-amiga/
 ├── amiboot
+├── vmlinux-m68k-amiga
 ├── vmlinuz-m68k-amiga
 ├── initramfs-m68kdeb.gz
 ├── Start-m68kDeb
@@ -19,20 +20,22 @@ m68kdeb-amiga/
 └── PROVENANCE.txt
 ```
 
-The repository does not redistribute `amiboot` or a Linux kernel merely by naming these files. The build/packaging step must fetch or consume explicitly supplied, provenance-recorded inputs and verify expected hashes where available.
+`amiboot` is fetched as the historical Debian-distributed `amiboot 5.6` binary and verified against a pinned SHA-256. Linux 7.2.4 source is likewise fetched from kernel.org and verified against a pinned SHA-256 before build.
+
+Both uncompressed and compressed kernels are retained. The launch contract uses the uncompressed `vmlinux-m68k-amiga`, because `amiboot 5.6` requires an uncompressed kernel. `vmlinuz-m68k-amiga` is retained for preservation and possible future bootstrap variants.
 
 ## Launch contract
 
 Normal PAL reference:
 
 ```text
-amiboot -d -k vmlinuz-m68k-amiga -r initramfs-m68kdeb.gz root=/dev/ram video=pal
+amiboot -d -k vmlinux-m68k-amiga -r initramfs-m68kdeb.gz root=/dev/ram video=pal
 ```
 
 Serial-debug reference:
 
 ```text
-amiboot -d -k vmlinuz-m68k-amiga -r initramfs-m68kdeb.gz root=/dev/ram video=pal console=ttyS0,9600n8
+amiboot -d -k vmlinux-m68k-amiga -r initramfs-m68kdeb.gz root=/dev/ram video=pal console=ttyS0,9600n8
 ```
 
 NTSC profiles substitute `video=ntsc`.
@@ -48,8 +51,10 @@ NTSC profiles substitute `video=ntsc`.
 
 ## Static qualification
 
-`scripts/check-amiga-bootstrap.sh DIR` validates the bundle shape, executable launch scripts, kernel/initramfs presence, checksums file and provenance file. It deliberately does not claim the contents boot.
+`scripts/check-amiga-bootstrap.sh DIR` validates the bundle shape, executable launch scripts, uncompressed launch kernel, initramfs, checksums and provenance. It deliberately does not claim that the bundle boots.
+
+M1.3 build/static qualification is recorded separately in `docs/M1_3_BUILD_QUALIFICATION.md`.
 
 ## Next runtime milestone
 
-The next Amiga milestone is to acquire/build a current Amiga-capable m68k kernel and installer initramfs, assemble the bundle, and boot it visibly in FS-UAE with serial logging available for diagnosis.
+The next Amiga milestone is M1.3a: boot the qualified bundle through FS-UAE using a redistributable AROS Kickstart environment, observe Linux execution and the `M1.3 bootstrap reached userspace.` marker, and retain serial/log evidence. Proprietary Kickstart ROMs are not part of public CI.
