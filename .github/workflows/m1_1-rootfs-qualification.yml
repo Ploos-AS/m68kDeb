@@ -1,0 +1,52 @@
+name: M1.1 rootfs qualification
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/m1_1-rootfs-qualification.yml'
+      - 'Makefile'
+      - 'scripts/check-current-ports.sh'
+      - 'rootfs/build-current.sh'
+      - 'releases/current.yaml'
+  workflow_dispatch:
+
+jobs:
+  qualify:
+    runs-on: ubuntu-latest
+    container:
+      image: debian:unstable
+    steps:
+      - name: Install host tools
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            ca-certificates curl gzip git make mmdebstrap qemu-user-static \
+            debian-ports-archive-keyring xz-utils
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Debian Ports preflight
+        run: make check-current
+
+      - name: Build current m68k rootfs
+        run: make build-current
+
+      - name: Record qualification evidence
+        run: |
+          mkdir -p out/qualification
+          sha256sum out/rootfs-current-m68k.tar.xz | tee out/qualification/SHA256SUMS
+          stat -c '%n %s bytes' out/rootfs-current-m68k.tar.xz | tee out/qualification/SIZE.txt
+          tar -tJf out/rootfs-current-m68k.tar.xz | head -200 > out/qualification/ROOTFS_HEAD.txt
+          git rev-parse HEAD > out/qualification/GIT_HEAD.txt
+
+      - name: Upload rootfs qualification artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: m1-1-rootfs-${{ github.sha }}
+          path: |
+            out/rootfs-current-m68k.tar.xz
+            out/qualification/
+          if-no-files-found: error
+          retention-days: 14
