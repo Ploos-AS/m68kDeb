@@ -1,0 +1,13 @@
+schema: 1
+id: etch-era
+name: Debian 4.0-era m68k
+codename: etch
+version: "4.0-era"
+class: historical-unofficial
+security_status: obsolete
+platforms: [amiga, atari, mac68k]
+installer_strategy: investigate
+source:
+  type: historical-unofficial
+  notes: "m68k was not an official Debian 4.0 release architecture; qualify surviving material individually."
+qualification: unverified
