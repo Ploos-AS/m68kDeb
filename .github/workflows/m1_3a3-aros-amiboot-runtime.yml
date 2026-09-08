@@ -63,32 +63,37 @@ jobs:
       - name: Boot AROS and m68kDeb under FS-UAE
         run: |
           mkdir -p out/m1-3a3/logs out/m1-3a3/screenshots
+          rm -f /tmp/m68kdeb-fsuae-serial /tmp/m68kdeb-capture-serial
+
+          # FS-UAE documents a real/virtual device path as a supported serial backend.
+          # A PTY pair avoids depending on the TCP listener implementation in the
+          # Ubuntu 24.04 FS-UAE package and gives us a stable capture endpoint.
+          socat -d -d \
+            pty,raw,echo=0,link=/tmp/m68kdeb-fsuae-serial \
+            pty,raw,echo=0,link=/tmp/m68kdeb-capture-serial \
+            2>out/m1-3a3/socat.log &
+          bridge=$!
+
+          for i in $(seq 1 20); do
+            [ -e /tmp/m68kdeb-fsuae-serial ] && [ -e /tmp/m68kdeb-capture-serial ] && break
+            sleep 1
+          done
+          [ -e /tmp/m68kdeb-fsuae-serial ] && [ -e /tmp/m68kdeb-capture-serial ] || {
+            echo "serial PTY pair did not appear" >&2
+            cat out/m1-3a3/socat.log >&2 || true
+            kill -TERM "$bridge" 2>/dev/null || true
+            exit 1
+          }
+
+          timeout 420 cat /tmp/m68kdeb-capture-serial >out/m1-3a3/serial.log &
+          serial=$!
+
           xvfb-run -a sh -eu -c '
             fs-uae ci/fs-uae/m1_3a3_aros_amiboot.fs-uae >out/m1-3a3/fs-uae.stdout.log 2>&1 &
             emu=$!
 
-            connected=0
-            for i in $(seq 1 60); do
-              if timeout 1 sh -c "exec 3<>/dev/tcp/127.0.0.1/1234" 2>/dev/null; then
-                connected=1
-                break
-              fi
-              sleep 1
-            done
-            [ "$connected" -eq 1 ] || {
-              echo "serial listener did not appear" >&2
-              cat out/m1-3a3/fs-uae.stdout.log >&2 || true
-              kill -TERM "$emu" 2>/dev/null || true
-              exit 1
-            }
-
-            # Reconnect with a persistent reader after the readiness probe.
-            # FS-UAE accepts a new serial TCP client after the probe disconnects.
-            timeout 360 socat - TCP:127.0.0.1:1234 >out/m1-3a3/serial.log 2>&1 &
-            serial=$!
-
             found=0
-            for i in $(seq 1 360); do
+            for i in $(seq 1 420); do
               if grep -Fq "M1.3 bootstrap reached userspace." out/m1-3a3/serial.log 2>/dev/null; then
                 found=1
                 break
@@ -101,11 +106,9 @@ jobs:
             done
 
             scrot out/m1-3a3/screenshots/m1-3a3-runtime.png || true
-            kill -TERM "$serial" 2>/dev/null || true
             kill -INT "$emu" 2>/dev/null || true
             sleep 2
             kill -TERM "$emu" 2>/dev/null || true
-            wait "$serial" 2>/dev/null || true
             wait "$emu" 2>/dev/null || true
 
             if [ "$found" -ne 1 ]; then
@@ -117,6 +120,13 @@ jobs:
               exit 1
             fi
           '
+          rc=$?
+
+          kill -TERM "$serial" 2>/dev/null || true
+          kill -TERM "$bridge" 2>/dev/null || true
+          wait "$serial" 2>/dev/null || true
+          wait "$bridge" 2>/dev/null || true
+          exit "$rc"
 
       - name: Record runtime PASS
         run: |
@@ -130,6 +140,7 @@ jobs:
             echo "rom=AROS-20260908 amiga-m68k"
             echo "aros_payload_sha256=799a327bdd50c008c7d35fe57524876b0780d4db4caf8df1cea6fcaf123cd46b"
             echo "aros_iso_sha256=a9087e8095c58d554a4b3bc85dd35ac9d2da6954bcc066a419d8a7a06c358e65"
+            echo "serial_backend=socat-pty"
             echo "marker=M1.3 bootstrap reached userspace."
             fs-uae --version | head -n 1 | sed 's/^/fs_uae=/'
           } > out/m1-3a3/RESULT.txt
