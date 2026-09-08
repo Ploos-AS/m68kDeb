@@ -14,32 +14,28 @@ on:
 jobs:
   qualify:
     runs-on: ubuntu-latest
-    container:
-      image: debian:unstable
     steps:
-      - name: Install host tools
-        run: |
-          apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            ca-certificates curl gzip git make mmdebstrap qemu-user-static \
-            debian-ports-archive-keyring xz-utils
-
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Debian Ports preflight
-        run: make check-current
-
-      - name: Build current m68k rootfs
-        run: make build-current
-
-      - name: Record qualification evidence
+      - name: Qualify in privileged Debian unstable container
         run: |
-          mkdir -p out/qualification
-          sha256sum out/rootfs-current-m68k.tar.xz | tee out/qualification/SHA256SUMS
-          stat -c '%n %s bytes' out/rootfs-current-m68k.tar.xz | tee out/qualification/SIZE.txt
-          tar -tJf out/rootfs-current-m68k.tar.xz | head -200 > out/qualification/ROOTFS_HEAD.txt
-          git rev-parse HEAD > out/qualification/GIT_HEAD.txt
+          docker run --rm --privileged \
+            -v "$GITHUB_WORKSPACE:/work" \
+            -w /work \
+            debian:unstable sh -euxc '
+              apt-get update
+              DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+                arch-test ca-certificates curl gzip git make mmdebstrap qemu-user-static \
+                debian-ports-archive-keyring xz-utils
+              make check-current
+              make build-current
+              mkdir -p out/qualification
+              sha256sum out/rootfs-current-m68k.tar.xz | tee out/qualification/SHA256SUMS
+              stat -c "%n %s bytes" out/rootfs-current-m68k.tar.xz | tee out/qualification/SIZE.txt
+              tar -tJf out/rootfs-current-m68k.tar.xz | head -200 > out/qualification/ROOTFS_HEAD.txt
+              git rev-parse HEAD > out/qualification/GIT_HEAD.txt
+            '
 
       - name: Upload rootfs qualification artifact
         uses: actions/upload-artifact@v4
