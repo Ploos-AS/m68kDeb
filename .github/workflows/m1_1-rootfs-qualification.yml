@@ -44,6 +44,7 @@ jobs:
               sha256sum out/rootfs-current-m68k.tar.xz | tee out/qualification/SHA256SUMS
               stat -c "%n %s bytes" out/rootfs-current-m68k.tar.xz | tee out/qualification/SIZE.txt
               tar -tJf out/rootfs-current-m68k.tar.xz | head -200 > out/qualification/ROOTFS_HEAD.txt
+              git config --global --add safe.directory /work
               git rev-parse HEAD > out/qualification/GIT_HEAD.txt
             '
 
