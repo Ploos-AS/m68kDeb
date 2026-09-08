@@ -1,0 +1,19 @@
+[fs-uae]
+amiga_model = A3000
+kickstart_file = out/m1-3a3/aros-root/boot/amiga/aros-rom.bin
+kickstart_ext_file = out/m1-3a3/aros-root/boot/amiga/aros-ext.bin
+kickstart_setup = 0
+motherboard_ram = 16384
+hard_drive_0 = out/m1-3a3/aros-root
+hard_drive_0_label = System
+hard_drive_0_read_only = 0
+serial_port = tcp://127.0.0.1:1234/wait
+uae_cpu_speed = max
+fullscreen = 0
+window_width = 752
+window_height = 576
+logs_dir = out/m1-3a3/logs
+screenshots_dir = out/m1-3a3/screenshots
+
+# M1.3a.3 uses only AROS ROMs extracted from the pinned public AROS
+# amiga-m68k boot ISO. No proprietary Commodore/Amiga ROM is accepted.
