@@ -2,7 +2,7 @@
 set -eu
 
 OUT=${OUT:-out/amiboot}
-AMIBOOT_URL=${AMIBOOT_URL:-https://archive.debian.org/debian/dists/Debian-3.0/main/disks-m68k/current/amiga/amiboot-5.6}
+AMIBOOT_URL=${AMIBOOT_URL:-https://archive.debian.org/debian/dists/woody/main/disks-m68k/current/amiga/amiboot-5.6}
 AMIBOOT_SHA256=${AMIBOOT_SHA256:-}
 
 command -v curl >/dev/null
