@@ -2,6 +2,7 @@
 set -eu
 
 LINUX_VERSION=${LINUX_VERSION:-7.2.4}
+LINUX_SHA256=${LINUX_SHA256:-01710ee01737dac492f1bae52becd057e08d20d11589089aa06accff415c28dd}
 JOBS=${JOBS:-2}
 OUT=${OUT:-out/kernel-amiga}
 WORK=${WORK:-out/kernel-work}
@@ -13,12 +14,20 @@ command -v curl >/dev/null
 command -v tar >/dev/null
 command -v make >/dev/null
 command -v m68k-linux-gnu-gcc >/dev/null
+command -v sha256sum >/dev/null
 
 rm -rf "$WORK" "$OUT"
 mkdir -p "$WORK" "$OUT"
 
 curl -fL "$URL" -o "$TARBALL"
-sha256sum "$TARBALL" > "$OUT/linux-source.SHA256"
+ACTUAL_SHA256=$(sha256sum "$TARBALL" | awk '{print $1}')
+if [ "$ACTUAL_SHA256" != "$LINUX_SHA256" ]; then
+  echo "FAIL: Linux source SHA-256 mismatch" >&2
+  echo "expected=$LINUX_SHA256" >&2
+  echo "actual=$ACTUAL_SHA256" >&2
+  exit 1
+fi
+printf '%s  %s\n' "$ACTUAL_SHA256" "$(basename "$TARBALL")" > "$OUT/linux-source.SHA256"
 tar -C "$WORK" -xf "$TARBALL"
 
 make -C "$SRC" ARCH=m68k CROSS_COMPILE=m68k-linux-gnu- amiga_defconfig
