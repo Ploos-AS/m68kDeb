@@ -10,6 +10,7 @@ command -v curl >/dev/null
 command -v gzip >/dev/null
 command -v cpio >/dev/null
 command -v dpkg-deb >/dev/null
+command -v find >/dev/null
 
 rm -rf "$OUT"
 mkdir -p "$ROOT/bin" "$ROOT/sbin" "$ROOT/proc" "$ROOT/sys" "$ROOT/dev" "$ROOT/tmp" "$OUT/download"
@@ -24,8 +25,27 @@ PKG_PATH=$(gzip -dc "$PACKAGES" | awk '
 [ -n "$PKG_PATH" ]
 DEB="$OUT/download/busybox-static_m68k.deb"
 curl -fL "$PORTS/$PKG_PATH" -o "$DEB"
+
+DEB_ARCH=$(dpkg-deb -f "$DEB" Architecture)
+if [ "$DEB_ARCH" != "m68k" ]; then
+  echo "FAIL: busybox-static package architecture is '$DEB_ARCH', expected 'm68k'" >&2
+  exit 1
+fi
+
 dpkg-deb -x "$DEB" "$OUT/pkg"
-cp "$OUT/pkg/bin/busybox" "$ROOT/bin/busybox"
+
+# Debian's usr-merge may place BusyBox in /usr/bin rather than /bin.
+# Do not depend on either layout: locate the extracted executable by name.
+BUSYBOX_PATH=$(find "$OUT/pkg" -type f -name busybox -print | head -n 1)
+if [ -z "$BUSYBOX_PATH" ]; then
+  echo "FAIL: busybox executable not found in extracted busybox-static package" >&2
+  echo "Package contents:" >&2
+  dpkg-deb -c "$DEB" >&2
+  exit 1
+fi
+
+printf 'busybox package path: %s\n' "${BUSYBOX_PATH#$OUT/pkg}"
+cp "$BUSYBOX_PATH" "$ROOT/bin/busybox"
 chmod 0755 "$ROOT/bin/busybox"
 
 for app in sh mount umount mkdir cat echo uname dmesg sleep poweroff reboot ls; do
