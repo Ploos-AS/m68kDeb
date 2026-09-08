@@ -1,0 +1,70 @@
+name: M1.3a.2 AROS system probe
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/m1_3a2-aros-system-probe.yml'
+      - 'ci/fs-uae/fetch-aros-m68k-nightly.sh'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install probe dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends curl file lhasa unzip xz-utils python3 genisoimage
+
+      - name: Fetch official AROS amiga-m68k nightly
+        run: sh ci/fs-uae/fetch-aros-m68k-nightly.sh
+
+      - name: Inspect AROS ISO
+        run: |
+          ISO=$(cat out/aros-m68k/ISO_PATH)
+          mkdir -p out/aros-m68k/iso-tree
+          sudo mount -o loop,ro "$ISO" out/aros-m68k/iso-tree
+          find out/aros-m68k/iso-tree -maxdepth 4 -type f -printf '%P\n' | sort > out/aros-m68k/ISO_CONTENTS.txt
+          {
+            echo '=== boot/amiga ==='
+            find out/aros-m68k/iso-tree/boot/amiga -maxdepth 2 -type f -printf '%P\n' 2>/dev/null | sort || true
+            echo '=== startup files ==='
+            find out/aros-m68k/iso-tree -type f \( -iname 'startup-sequence' -o -iname 'startup-sequence.*' \) -printf '%P\n' | sort || true
+            echo '=== shell candidates ==='
+            find out/aros-m68k/iso-tree -type f \( -iname 'shell' -o -iname 'cli' \) -printf '%P\n' | sort | head -n 50 || true
+          } | tee out/aros-m68k/PROBE.txt
+          sudo umount out/aros-m68k/iso-tree
+
+      - name: Record provenance
+        run: |
+          {
+            echo "git=${GITHUB_SHA}"
+            echo "workflow_run=${GITHUB_RUN_ID}"
+            echo "runner=ubuntu-24.04"
+            printf 'aros_source='; cat out/aros-m68k/SOURCE_URL
+            printf 'payload_sha256='; cut -d' ' -f1 out/aros-m68k/SHA256SUMS
+            printf 'iso_sha256='; cut -d' ' -f1 out/aros-m68k/ISO_SHA256
+          } > out/aros-m68k/PROVENANCE.txt
+
+      - name: Upload probe evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: m1-3a2-aros-system-probe-${{ github.sha }}
+          path: |
+            out/aros-m68k/SOURCE_URL
+            out/aros-m68k/SHA256SUMS
+            out/aros-m68k/ISO_SHA256
+            out/aros-m68k/FILE.txt
+            out/aros-m68k/CONTENTS.txt
+            out/aros-m68k/ISO_CONTENTS.txt
+            out/aros-m68k/PROBE.txt
+            out/aros-m68k/PROVENANCE.txt
+          if-no-files-found: error
+          retention-days: 14
