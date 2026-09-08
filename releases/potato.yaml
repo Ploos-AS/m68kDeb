@@ -1,0 +1,13 @@
+schema: 1
+id: potato
+name: Debian GNU/Linux 2.2
+codename: potato
+version: "2.2"
+class: historical-official
+security_status: obsolete
+platforms: [amiga, atari, mac68k]
+installer_strategy: historical-native
+source:
+  type: debian-archive
+  notes: "Pin exact archived installation artifacts during qualification."
+qualification: unverified
