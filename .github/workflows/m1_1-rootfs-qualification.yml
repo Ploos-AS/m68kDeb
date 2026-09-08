@@ -26,8 +26,13 @@ jobs:
             debian:unstable sh -euxc '
               apt-get update
               DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-                arch-test ca-certificates curl gzip git make mmdebstrap qemu-user-static \
-                debian-ports-archive-keyring xz-utils
+                arch-test binfmt-support ca-certificates curl gzip git make mmdebstrap \
+                qemu-user-static debian-ports-archive-keyring xz-utils
+              mkdir -p /proc/sys/fs/binfmt_misc
+              mountpoint -q /proc/sys/fs/binfmt_misc || mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc
+              update-binfmts --enable qemu-m68k
+              update-binfmts --display qemu-m68k
+              arch-test m68k
               make check-current
               make build-current
               mkdir -p out/qualification
