@@ -2,7 +2,10 @@
 set -eu
 
 OUT=${OUT:-out/aros-m68k}
-INDEX_URL=${AROS_INDEX_URL:-https://www.aros.org/cgi-bin/files?lang=en&type=nightly2}
+# Use the TLS-valid SourceForge-hosted AROS site. The www.aros.org hostname
+# currently presents a certificate that does not match the host name, so CI
+# deliberately avoids bypassing TLS verification.
+INDEX_URL=${AROS_INDEX_URL:-https://aros.sourceforge.io/cgi-bin/files?lang=en&type=nightly2}
 mkdir -p "$OUT"
 
 INDEX="$OUT/nightly.html"
