@@ -39,12 +39,20 @@ make -C "$SRC" ARCH=m68k CROSS_COMPILE=m68k-linux-gnu- amiga_defconfig
 make -C "$SRC" ARCH=m68k CROSS_COMPILE=m68k-linux-gnu- olddefconfig
 make -C "$SRC" -j"$JOBS" ARCH=m68k CROSS_COMPILE=m68k-linux-gnu- zImage
 
+# Keep both forms. Debian's Amiga notes recommend amiboot 5.6 as the
+# reliable fallback, and 5.6 requires an uncompressed kernel image.
+cp "$SRC/vmlinux" "$OUT/vmlinux-m68k-amiga"
 cp "$SRC/vmlinux.gz" "$OUT/vmlinuz-m68k-amiga"
 cp "$SRC/.config" "$OUT/kernel.config"
 cp "$SRC/System.map" "$OUT/System.map"
 printf '%s\n' "$LINUX_VERSION" > "$OUT/VERSION"
 printf '%s\n' "$URL" > "$OUT/SOURCE_URL"
-sha256sum "$OUT/vmlinuz-m68k-amiga" "$OUT/kernel.config" "$OUT/System.map" > "$OUT/SHA256SUMS"
+sha256sum \
+  "$OUT/vmlinux-m68k-amiga" \
+  "$OUT/vmlinuz-m68k-amiga" \
+  "$OUT/kernel.config" \
+  "$OUT/System.map" > "$OUT/SHA256SUMS"
 
-printf 'kernel: %s\n' "$OUT/vmlinuz-m68k-amiga"
+printf 'kernel: %s\n' "$OUT/vmlinux-m68k-amiga"
+printf 'compressed kernel: %s\n' "$OUT/vmlinuz-m68k-amiga"
 cat "$OUT/SHA256SUMS"
