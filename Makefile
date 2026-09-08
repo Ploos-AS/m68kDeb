@@ -1,5 +1,6 @@
 .PHONY: check-current build-current qualify-current
 
+# Current Debian Ports/m68k host-side qualification targets.
 check-current:
 	sh scripts/check-current-ports.sh
 
