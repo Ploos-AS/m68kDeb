@@ -1,2 +1,2 @@
 ; m68kDeb Amiga bootstrap — PAL reference
-amiboot -d -k vmlinuz-m68k-amiga -r initramfs-m68kdeb.gz root=/dev/ram video=pal
+amiboot -d -k vmlinux-m68k-amiga -r initramfs-m68kdeb.gz root=/dev/ram video=pal
