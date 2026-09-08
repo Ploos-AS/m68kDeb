@@ -1,0 +1,134 @@
+name: M1.3a.4 AROS boot-only qualification
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/m1_3a4-aros-boot-only.yml'
+      - 'ci/fs-uae/m1_3a4_aros_boot_only.fs-uae'
+      - 'ci/fs-uae/prepare-m1_3a4-boot-only.sh'
+
+permissions:
+  contents: read
+
+jobs:
+  boot-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ca-certificates curl fs-uae scrot socat unzip xvfb xorriso
+          fs-uae --version
+
+      - name: Prepare pinned AROS boot-only root
+        run: sh ci/fs-uae/prepare-m1_3a4-boot-only.sh
+
+      - name: Boot AROS to Startup-Sequence boundary
+        run: |
+          mkdir -p out/m1-3a4/logs out/m1-3a4/screenshots
+          rm -f /tmp/m68kdeb-fsuae-serial /tmp/m68kdeb-capture-serial
+
+          socat -d -d \
+            pty,raw,echo=0,link=/tmp/m68kdeb-fsuae-serial \
+            pty,raw,echo=0,link=/tmp/m68kdeb-capture-serial \
+            2>out/m1-3a4/socat.log &
+          bridge=$!
+
+          for i in $(seq 1 20); do
+            [ -e /tmp/m68kdeb-fsuae-serial ] && [ -e /tmp/m68kdeb-capture-serial ] && break
+            sleep 1
+          done
+          [ -e /tmp/m68kdeb-fsuae-serial ] && [ -e /tmp/m68kdeb-capture-serial ] || {
+            echo "serial PTY pair did not appear" >&2
+            cat out/m1-3a4/socat.log >&2 || true
+            kill -TERM "$bridge" 2>/dev/null || true
+            exit 1
+          }
+
+          timeout 300 cat /tmp/m68kdeb-capture-serial >out/m1-3a4/serial.log &
+          serial=$!
+
+          xvfb-run -a sh -eu -c '
+            fs-uae ci/fs-uae/m1_3a4_aros_boot_only.fs-uae >out/m1-3a4/fs-uae.stdout.log 2>&1 &
+            emu=$!
+
+            found=0
+            for i in $(seq 1 300); do
+              if [ -f out/m1-3a4/aros-root/m1-3a4-startup.marker ]; then
+                found=1
+                break
+              fi
+              if ! kill -0 "$emu" 2>/dev/null; then
+                echo "FS-UAE exited before Startup-Sequence marker" >&2
+                break
+              fi
+              sleep 1
+            done
+
+            scrot out/m1-3a4/screenshots/m1-3a4-boot-only.png || true
+            kill -INT "$emu" 2>/dev/null || true
+            sleep 2
+            kill -TERM "$emu" 2>/dev/null || true
+            wait "$emu" 2>/dev/null || true
+
+            if [ "$found" -ne 1 ]; then
+              echo "M1.3a.4 Startup-Sequence marker not observed" >&2
+              echo "=== serial ===" >&2
+              cat out/m1-3a4/serial.log >&2 || true
+              echo "=== fs-uae ===" >&2
+              tail -200 out/m1-3a4/fs-uae.stdout.log >&2 || true
+              exit 1
+            fi
+          '
+          rc=$?
+
+          kill -TERM "$serial" 2>/dev/null || true
+          kill -TERM "$bridge" 2>/dev/null || true
+          wait "$serial" 2>/dev/null || true
+          wait "$bridge" 2>/dev/null || true
+          exit "$rc"
+
+      - name: Record boot-only PASS
+        run: |
+          marker=$(tr -d '\r\n' < out/m1-3a4/aros-root/m1-3a4-startup.marker)
+          {
+            echo "result=PASS"
+            echo "git=${GITHUB_SHA}"
+            echo "workflow_run=${GITHUB_RUN_ID}"
+            echo "machine=A3000"
+            echo "cpu=68030+MMU"
+            echo "cpu_speed=real"
+            echo "rom=FS-UAE internal AROS replacement ROM"
+            echo "aros_system=AROS-20260908 amiga-m68k nightly"
+            echo "aros_payload_sha256=799a327bdd50c008c7d35fe57524876b0780d4db4caf8df1cea6fcaf123cd46b"
+            echo "aros_iso_sha256=a9087e8095c58d554a4b3bc85dd35ac9d2da6954bcc066a419d8a7a06c358e65"
+            echo "serial_backend=socat-pty"
+            echo "amiboot=not-invoked"
+            echo "linux=not-invoked"
+            echo "marker=$marker"
+            fs-uae --version | head -n 1 | sed 's/^/fs_uae=/'
+          } > out/m1-3a4/RESULT.txt
+
+      - name: Upload boot-only evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m1-3a4-aros-boot-only-${{ github.sha }}
+          path: |
+            out/m1-3a4/RESULT.txt
+            out/m1-3a4/RUNTIME_PROVENANCE.txt
+            out/m1-3a4/ORIGINAL-Startup-Sequence
+            out/m1-3a4/aros-root/S/Startup-Sequence
+            out/m1-3a4/aros-root/m1-3a4-startup.marker
+            out/m1-3a4/serial.log
+            out/m1-3a4/socat.log
+            out/m1-3a4/fs-uae.stdout.log
+            out/m1-3a4/screenshots/
+          if-no-files-found: warn
+          retention-days: 14
