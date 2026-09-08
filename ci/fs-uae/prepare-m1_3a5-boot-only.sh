@@ -34,8 +34,8 @@ cp "$OUT/aros-root/S/Startup-Sequence" "$OUT/ORIGINAL-Startup-Sequence"
 rm -f "$OUT/aros-root/m1-3a5-startup.marker"
 
 cat > "$OUT/aros-root/S/Startup-Sequence" <<'EOF'
-C:Echo "M1.3a.5 AROS A1200/1230 boot-only Startup-Sequence reached" >SYS:m1-3a5-startup.marker
-C:Echo "m68kDeb M1.3a.5 AROS A1200/1230 boot-only probe"
+C:Echo "M1.3a.5 AROS A1200 generic 68030 boot-only Startup-Sequence reached" >SYS:m1-3a5-startup.marker
+C:Echo "m68kDeb M1.3a.5 AROS A1200 generic 68030 boot-only probe"
 C:Wait 300
 EOF
 
@@ -44,12 +44,14 @@ EOF
   echo "aros_payload_sha256=$AROS_SHA256"
   echo "aros_iso_sha256=$AROS_ISO_SHA256"
   echo "rom=FS-UAE internal AROS replacement ROM"
-  echo "machine=A1200/1230"
+  echo "machine=A1200"
   echo "cpu=68030+MMU"
+  echo "accelerator=none"
+  echo "accelerator_rom=none"
   echo "cpu_speed=real"
   echo "probe=Startup-Sequence marker file only; no amiboot; no Linux"
   echo "control=M1.3a.4 A3000 failed during AROS MMU init before Startup-Sequence"
   sha256sum "$OUT/aros-root/S/Startup-Sequence" "$OUT/ORIGINAL-Startup-Sequence"
 } > "$OUT/RUNTIME_PROVENANCE.txt"
 
-echo "PASS: prepared pinned AROS A1200/1230 boot-only root"
+echo "PASS: prepared pinned AROS A1200 generic 68030 boot-only root"
