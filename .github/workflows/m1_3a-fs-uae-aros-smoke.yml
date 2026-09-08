@@ -1,0 +1,68 @@
+name: M1.3a FS-UAE AROS smoke
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/m1_3a-fs-uae-aros-smoke.yml'
+      - 'ci/fs-uae/**'
+      - 'scripts/check-fs-uae-aros-smoke.sh'
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate AROS-only profile
+        run: sh scripts/check-fs-uae-aros-smoke.sh
+
+      - name: Install FS-UAE and X virtual framebuffer
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends fs-uae xvfb scrot
+          fs-uae --version
+
+      - name: Start FS-UAE with internal AROS Kickstart
+        run: |
+          mkdir -p out/m1-3a/logs out/m1-3a/screenshots
+          xvfb-run -a sh -eu -c '
+            fs-uae ci/fs-uae/m1_3a_aros_smoke.fs-uae >out/m1-3a/fs-uae.stdout.log 2>&1 &
+            pid=$!
+            sleep 25
+            if ! kill -0 "$pid" 2>/dev/null; then
+              echo "FS-UAE exited before the smoke interval" >&2
+              cat out/m1-3a/fs-uae.stdout.log >&2 || true
+              wait "$pid" || true
+              exit 1
+            fi
+            scrot out/m1-3a/screenshots/m1-3a-aros-smoke.png || true
+            kill -INT "$pid" 2>/dev/null || true
+            sleep 2
+            kill -TERM "$pid" 2>/dev/null || true
+            wait "$pid" || true
+          '
+
+      - name: Record smoke provenance
+        run: |
+          {
+            echo "git=${GITHUB_SHA}"
+            echo "workflow_run=${GITHUB_RUN_ID}"
+            echo "runner=ubuntu-24.04"
+            echo "profile=ci/fs-uae/m1_3a_aros_smoke.fs-uae"
+            echo "kickstart=FS-UAE internal AROS replacement"
+            fs-uae --version | head -n 1 | sed 's/^/fs_uae=/'
+          } > out/m1-3a/PROVENANCE.txt
+
+      - name: Upload smoke evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: m1-3a-aros-smoke-${{ github.sha }}
+          path: out/m1-3a/
+          if-no-files-found: error
+          retention-days: 14
