@@ -1,5 +1,6 @@
 [fs-uae]
-amiga_model = A1200/1230
+amiga_model = A1200
+cpu = 68030
 kickstart_file = internal
 uae_cpu_speed = real
 hard_drive_0 = out/m1-3a5/aros-root
@@ -13,6 +14,10 @@ logs_dir = out/m1-3a5/logs
 screenshots_dir = out/m1-3a5/screenshots
 
 # M1.3a.4 proved the pinned AROS system crashes during MMU initialization on
-# A3000 before Startup-Sequence. This profile changes only the Amiga machine
-# family while retaining 68030+MMU, real CPU timing, FS-UAE's internal AROS ROM,
-# the same pinned nightly system root, writable directory-backed DH0 and PTY.
+# A3000 before Startup-Sequence. Keep the A1200 chipset but explicitly override
+# its stock 68EC020 with a generic 68030. FS-UAE derives uae_mmu_model=68030
+# from cpu=68030. No accelerator board is selected and no accelerator ROM is
+# required by this profile.
+#
+# Retain real CPU timing, FS-UAE's internal AROS replacement ROM, the same
+# pinned nightly system root, writable directory-backed DH0 and PTY capture.
