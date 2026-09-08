@@ -1,0 +1,13 @@
+schema: 1
+id: current
+name: Debian Ports m68k
+codename: sid
+version: current
+class: current-ports
+security_status: rolling-development
+platforms: [amiga, atari, mac68k]
+installer_strategy: m68kdeb
+source:
+  type: debian-ports
+  notes: "Resolve and pin the active Debian Ports suites/endpoints at build or qualification time."
+qualification: unverified
