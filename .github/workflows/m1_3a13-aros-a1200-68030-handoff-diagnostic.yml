@@ -1,0 +1,181 @@
+name: M1.3a.13 AROS A1200 68030 amiboot handoff diagnostic
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/m1_3a13-aros-a1200-68030-handoff-diagnostic.yml'
+      - 'ci/fs-uae/m1_3a13_aros_a1200_68030_handoff_diagnostic.fs-uae'
+      - 'ci/fs-uae/prepare-m1_3a13-handoff-diagnostic.sh'
+      - 'kernel/build-amiga.sh'
+      - 'platforms/amiga/fetch-amiboot.sh'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build and runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bc bison build-essential ca-certificates curl flex fs-uae \
+            gcc-m68k-linux-gnu libelf-dev libssl-dev make scrot socat \
+            unzip xvfb xorriso xz-utils
+          fs-uae --version
+
+      - name: Build pinned Amiga kernel and fetch amiboot
+        run: |
+          sh kernel/build-amiga.sh
+          sh platforms/amiga/fetch-amiboot.sh
+          mkdir -p out/m68kdeb-amiga
+          cp out/amiboot/amiboot out/m68kdeb-amiga/amiboot
+          cp out/kernel-amiga/vmlinux-m68k-amiga out/m68kdeb-amiga/vmlinux-m68k-amiga
+          sha256sum out/m68kdeb-amiga/amiboot out/m68kdeb-amiga/vmlinux-m68k-amiga
+          wc -c out/m68kdeb-amiga/amiboot out/m68kdeb-amiga/vmlinux-m68k-amiga
+
+      - name: Prepare handoff diagnostic topology
+        run: sh ci/fs-uae/prepare-m1_3a13-handoff-diagnostic.sh
+
+      - name: Boot AROS and classify amiboot to Linux handoff
+        run: |
+          mkdir -p out/m1-3a13/logs out/m1-3a13/screenshots
+          rm -f /tmp/m68kdeb-fsuae-serial /tmp/m68kdeb-capture-serial
+
+          socat -d -d \
+            pty,raw,echo=0,link=/tmp/m68kdeb-fsuae-serial \
+            pty,raw,echo=0,link=/tmp/m68kdeb-capture-serial \
+            2>out/m1-3a13/socat.log &
+          bridge=$!
+
+          for i in $(seq 1 20); do
+            [ -e /tmp/m68kdeb-fsuae-serial ] && [ -e /tmp/m68kdeb-capture-serial ] && break
+            sleep 1
+          done
+          [ -e /tmp/m68kdeb-fsuae-serial ] && [ -e /tmp/m68kdeb-capture-serial ] || exit 1
+
+          timeout 600 cat /tmp/m68kdeb-capture-serial >out/m1-3a13/serial.log &
+          serial=$!
+
+          set +e
+          xvfb-run -a sh -eu -c '
+            fs-uae ci/fs-uae/m1_3a13_aros_a1200_68030_handoff_diagnostic.fs-uae >out/m1-3a13/fs-uae.stdout.log 2>&1 &
+            emu=$!
+            startup=0
+            pre_handoff=0
+            returned=0
+            linux=0
+            emulator_exited=0
+
+            for i in $(seq 1 600); do
+              [ -f out/m1-3a13/aros-root/m1-3a13-startup.marker ] && startup=1
+              [ -f out/m1-3a13/aros-root/m1-3a13-pre-handoff.marker ] && pre_handoff=1
+              [ -f out/m1-3a13/aros-root/m1-3a13-amiboot-returned.marker ] && returned=1
+
+              if grep -Eq "Linux version|Booting Linux|Calibrating delay loop|Memory: .* available" out/m1-3a13/serial.log 2>/dev/null; then
+                linux=1
+                break
+              fi
+
+              if [ "$returned" -eq 1 ]; then
+                break
+              fi
+
+              if ! kill -0 "$emu" 2>/dev/null; then
+                emulator_exited=1
+                break
+              fi
+              sleep 1
+            done
+
+            scrot out/m1-3a13/screenshots/m1-3a13-handoff.png || true
+            kill -INT "$emu" 2>/dev/null || true
+            sleep 2
+            kill -TERM "$emu" 2>/dev/null || true
+            wait "$emu" 2>/dev/null || true
+
+            printf "startup=%s\npre_handoff=%s\namiboot_returned=%s\nlinux=%s\nemulator_exited=%s\n" \
+              "$startup" "$pre_handoff" "$returned" "$linux" "$emulator_exited" \
+              > out/m1-3a13/BOUNDARIES.txt
+
+            if [ "$startup" -ne 1 ]; then
+              echo "classification=AROS_STARTUP_FAILURE" > out/m1-3a13/CLASSIFICATION.txt
+              exit 1
+            fi
+            if [ "$pre_handoff" -ne 1 ]; then
+              echo "classification=PRE_HANDOFF_MARKER_FAILURE" > out/m1-3a13/CLASSIFICATION.txt
+              exit 1
+            fi
+            if [ "$linux" -eq 1 ]; then
+              echo "classification=LINUX_KERNEL_EXECUTION_OBSERVED" > out/m1-3a13/CLASSIFICATION.txt
+              exit 0
+            fi
+            if [ "$returned" -eq 1 ]; then
+              echo "classification=AMIBOOT_RETURNED_WITHOUT_LINUX" > out/m1-3a13/CLASSIFICATION.txt
+              exit 1
+            fi
+            if [ "$emulator_exited" -eq 1 ]; then
+              echo "classification=EMULATOR_EXIT_DURING_HANDOFF" > out/m1-3a13/CLASSIFICATION.txt
+              exit 1
+            fi
+            echo "classification=HANDOFF_STALL_NO_RETURN_NO_LINUX" > out/m1-3a13/CLASSIFICATION.txt
+            exit 1
+          '
+          rc=$?
+          set -e
+
+          kill -TERM "$serial" 2>/dev/null || true
+          kill -TERM "$bridge" 2>/dev/null || true
+          wait "$serial" 2>/dev/null || true
+          wait "$bridge" 2>/dev/null || true
+
+          echo '=== BOUNDARIES ==='
+          cat out/m1-3a13/BOUNDARIES.txt || true
+          echo '=== CLASSIFICATION ==='
+          cat out/m1-3a13/CLASSIFICATION.txt || true
+          echo '=== SERIAL TAIL ==='
+          tail -300 out/m1-3a13/serial.log || true
+          echo '=== FS-UAE TAIL ==='
+          tail -300 out/m1-3a13/fs-uae.stdout.log || true
+          exit "$rc"
+
+      - name: Record diagnostic PASS
+        run: |
+          {
+            echo "result=PASS"
+            echo "git=${GITHUB_SHA}"
+            echo "workflow_run=${GITHUB_RUN_ID}"
+            cat out/m1-3a13/CLASSIFICATION.txt
+            cat out/m1-3a13/BOUNDARIES.txt
+            cat out/m1-3a13/RUNTIME_PROVENANCE.txt
+            fs-uae --version | head -n 1 | sed 's/^/fs_uae=/'
+          } > out/m1-3a13/RESULT.txt
+
+      - name: Upload diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m1-3a13-amiboot-handoff-${{ github.sha }}
+          path: |
+            out/m1-3a13/RESULT.txt
+            out/m1-3a13/BOUNDARIES.txt
+            out/m1-3a13/CLASSIFICATION.txt
+            out/m1-3a13/RUNTIME_PROVENANCE.txt
+            out/m1-3a13/ORIGINAL-Startup-Sequence
+            out/m1-3a13/aros-root/S/Startup-Sequence
+            out/m1-3a13/aros-root/m1-3a13-*.marker
+            out/m1-3a13/serial.log
+            out/m1-3a13/socat.log
+            out/m1-3a13/fs-uae.stdout.log
+            out/m1-3a13/rom/
+            out/m1-3a13/screenshots/
+            out/amiboot/SHA256SUMS
+            out/kernel-amiga/linux-source.SHA256
+          if-no-files-found: warn
+          retention-days: 14
