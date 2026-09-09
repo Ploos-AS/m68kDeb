@@ -15,19 +15,23 @@
     .align  2
     .globl  m68kdeb_takeover_68030_trampoline_start
     .globl  m68kdeb_takeover_68030_trampoline_entry
+    .globl  m68kdeb_takeover_68030_trampoline_probe
     .globl  m68kdeb_takeover_68030_trampoline_mmu_off
     .globl  m68kdeb_takeover_68030_trampoline_post_mmu
+    .globl  m68kdeb_takeover_68030_trampoline_tc_zero
     .globl  m68kdeb_takeover_68030_trampoline_end
     .type   m68kdeb_takeover_68030_trampoline_entry,@function
 
 m68kdeb_takeover_68030_trampoline_start:
 m68kdeb_takeover_68030_trampoline_entry:
+/* Keep the 5d probe name as an alias while 5e strengthens the blob. */
+m68kdeb_takeover_68030_trampoline_probe:
     /* Disable MC68030 caches before the translation-state transition. */
     moveq   #0,%d0
     movec   %d0,%cacr
 
     /* TC=0 expresses the intended translation-disable operation. */
-    lea     .Lzero_tc(%pc),%a0
+    lea     m68kdeb_takeover_68030_trampoline_tc_zero(%pc),%a0
 m68kdeb_takeover_68030_trampoline_mmu_off:
     pmove   (%a0),%tc
 
@@ -42,7 +46,7 @@ m68kdeb_takeover_68030_trampoline_post_mmu:
     bra.s   .Lhalt
 
     .align  2
-.Lzero_tc:
+m68kdeb_takeover_68030_trampoline_tc_zero:
     .long   0
 m68kdeb_takeover_68030_trampoline_end:
 
