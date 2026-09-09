@@ -11,6 +11,7 @@ on:
       - 'loader/aros/m68kdeb-handoff.h'
       - 'loader/aros/m68kdeb-takeover.c'
       - 'loader/aros/m68kdeb-takeover.h'
+      - 'loader/aros/m68kdeb-takeover-68030.S'
       - '.github/workflows/m1_3b4b-aros-takeover-preflight.yml'
 
 permissions:
@@ -24,7 +25,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build reversible 4b loader with Bebbo
+      - name: Build reversible 4b loader and isolated 68030 stub with Bebbo
         run: |
           mkdir -p out/m1-3b4b
           docker pull amigadev/m68k-amigaos-gcc:latest
@@ -47,11 +48,16 @@ jobs:
                 -m68000 -Os -Wall -Wextra -Werror \
                 -Wno-error=pointer-sign -Wno-error=int-conversion \
                 -noixemul
+              "$CC" -c loader/aros/m68kdeb-takeover-68030.S \
+                -o out/m1-3b4b/m68kdeb-takeover-68030.o \
+                -m68030
             '
-          file out/m1-3b4b/m68kdeb-loader
-          sha256sum out/m1-3b4b/m68kdeb-loader | tee out/m1-3b4b/SHA256SUMS
+          file out/m1-3b4b/m68kdeb-loader out/m1-3b4b/m68kdeb-takeover-68030.o
+          sha256sum out/m1-3b4b/m68kdeb-loader \
+                    out/m1-3b4b/m68kdeb-takeover-68030.o \
+            | tee out/m1-3b4b/SHA256SUMS
 
-      - name: Verify irreversible symbol is not linked
+      - name: Verify reversible loader and isolated supervisor stub
         run: |
           if strings out/m1-3b4b/m68kdeb-loader | grep -q 'M68KDEB_TAKEOVER_COMMIT'; then
             echo 'unexpected irreversible takeover marker in reversible gate' >&2
@@ -59,8 +65,24 @@ jobs:
           fi
           strings out/m1-3b4b/m68kdeb-loader | grep -q 'M68KDEB_TAKEOVER_PREFLIGHT_OK'
           strings out/m1-3b4b/m68kdeb-loader | grep -q 'handoff=NOT_ATTEMPTED'
+          if strings out/m1-3b4b/m68kdeb-loader | grep -q 'm68kdeb_takeover_68030_supervisor_probe'; then
+            echo 'isolated supervisor stub unexpectedly linked into loader' >&2
+            exit 1
+          fi
+          docker run --rm -v "$PWD:/work" -w /work \
+            amigadev/m68k-amigaos-gcc:latest sh -lc '
+              NM=$(find /opt/amiga -type f -name "m68k-amigaos-nm" | head -n 1)
+              OBJDUMP=$(find /opt/amiga -type f -name "m68k-amigaos-objdump" | head -n 1)
+              test -x "$NM" && test -x "$OBJDUMP"
+              "$NM" out/m1-3b4b/m68kdeb-takeover-68030.o | \
+                grep -q " T m68kdeb_takeover_68030_supervisor_probe$"
+              "$OBJDUMP" -dr out/m1-3b4b/m68kdeb-takeover-68030.o \
+                > out/m1-3b4b/m68kdeb-takeover-68030.disasm
+              grep -q "m68kdeb_takeover_68030_supervisor_probe" \
+                out/m1-3b4b/m68kdeb-takeover-68030.disasm
+            '
 
-      - name: Upload reversible loader
+      - name: Upload reversible loader and isolated stub
         uses: actions/upload-artifact@v4
         with:
           name: m1-3b4b-reversible-loader
