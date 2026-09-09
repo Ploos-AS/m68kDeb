@@ -1,0 +1,19 @@
+[fs-uae]
+amiga_model = A1200
+cpu = 68030
+kickstart_file = out/m1-3b1/rom/aros-rom.bin
+kickstart_ext_file = out/m1-3b1/rom/aros-ext.bin
+uae_cpu_speed = real
+zorro_iii_memory = 65536
+hard_drive_0 = out/m1-3b1/aros-root
+hard_drive_0_label = System
+hard_drive_0_read_only = 0
+fullscreen = 0
+window_width = 752
+window_height = 576
+logs_dir = out/m1-3b1/logs
+screenshots_dir = out/m1-3b1/screenshots
+
+# M1.3b.1 returns to the known-good matching-AROS generic A1200/68030+MMU
+# topology. It does not invoke amiboot or Linux. It only executes the new
+# m68kDeb AROS-native loader probe and verifies its deterministic report.
