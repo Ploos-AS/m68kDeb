@@ -1,0 +1,21 @@
+[fs-uae]
+amiga_model = A1200
+cpu = 68030
+kickstart_file = out/m1-3b4a/rom/aros-rom.bin
+kickstart_ext_file = out/m1-3b4a/rom/aros-ext.bin
+uae_cpu_speed = real
+zorro_iii_memory = 65536
+hard_drive_0 = out/m1-3b4a/aros-root
+hard_drive_0_label = System
+hard_drive_0_read_only = 0
+fullscreen = 0
+window_width = 752
+window_height = 576
+logs_dir = out/m1-3b4a/logs
+screenshots_dir = out/m1-3b4a/screenshots
+
+# M1.3b.4a keeps the qualified matching-AROS A1200/68030+MMU topology.
+# It first runs the M1.3b.3 loader contract, then materializes all Linux ELF
+# PT_LOAD segments into a page-aligned contiguous destination and places the
+# bootinfo list immediately after the loaded image. No privileged takeover or
+# kernel jump is attempted in this reversible qualification step.
