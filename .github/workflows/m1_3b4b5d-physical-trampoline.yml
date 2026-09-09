@@ -1,0 +1,130 @@
+name: M1.3b.4b.5d physical trampoline gate
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'loader/aros/m68kdeb-loader.c'
+      - 'loader/aros/m68kdeb-layout.c'
+      - 'loader/aros/m68kdeb-layout.h'
+      - 'loader/aros/m68kdeb-handoff.c'
+      - 'loader/aros/m68kdeb-handoff.h'
+      - 'loader/aros/m68kdeb-takeover.c'
+      - 'loader/aros/m68kdeb-takeover.h'
+      - 'loader/aros/m68kdeb-takeover-68030.S'
+      - 'loader/aros/m68kdeb-takeover-68030-trampoline.S'
+      - 'docs/M1_3B4B5D_PHYSICAL_TRAMPOLINE.md'
+      - '.github/workflows/m1_3b4b5d-physical-trampoline.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build reversible loader and isolated 68030 probes
+        run: |
+          mkdir -p out/m1-3b4b5d
+          docker pull amigadev/m68k-amigaos-gcc:latest
+          docker run --rm \
+            -v "$PWD:/work" -w /work \
+            amigadev/m68k-amigaos-gcc:latest sh -lc '
+              set -eu
+              CC=$(find /opt/amiga -type f -name "m68k-amigaos-gcc" | head -n 1)
+              test -x "$CC"
+              "$CC" \
+                loader/aros/m68kdeb-loader.c \
+                loader/aros/m68kdeb-layout.c \
+                loader/aros/m68kdeb-handoff.c \
+                loader/aros/m68kdeb-takeover.c \
+                -o out/m1-3b4b5d/m68kdeb-loader \
+                -m68000 -Os -Wall -Wextra -Werror \
+                -Wno-error=pointer-sign -Wno-error=int-conversion \
+                -noixemul
+              "$CC" -c loader/aros/m68kdeb-takeover-68030.S \
+                -o out/m1-3b4b5d/m68kdeb-takeover-68030.o \
+                -m68030 -m68851
+              "$CC" -c loader/aros/m68kdeb-takeover-68030-trampoline.S \
+                -o out/m1-3b4b5d/m68kdeb-takeover-68030-trampoline.o \
+                -m68030 -m68851
+            '
+
+      - name: Verify physical trampoline contract
+        run: |
+          set -eu
+          if strings out/m1-3b4b5d/m68kdeb-loader | grep -q 'm68kdeb_takeover_68030_commit'; then
+            echo 'irreversible commit path unexpectedly linked into loader' >&2
+            exit 1
+          fi
+          if strings out/m1-3b4b5d/m68kdeb-loader | grep -q 'm68kdeb_takeover_68030_trampoline'; then
+            echo 'physical trampoline unexpectedly linked into loader' >&2
+            exit 1
+          fi
+
+          docker run --rm -v "$PWD:/work" -w /work \
+            amigadev/m68k-amigaos-gcc:latest sh -lc '
+              set -eu
+              NM=$(find /opt/amiga -type f -name "m68k-amigaos-nm" | head -n 1)
+              OBJDUMP=$(find /opt/amiga -type f -name "m68k-amigaos-objdump" | head -n 1)
+              test -x "$NM" && test -x "$OBJDUMP"
+
+              "$NM" -n out/m1-3b4b5d/m68kdeb-takeover-68030-trampoline.o \
+                > out/m1-3b4b5d/trampoline.nm
+              "$OBJDUMP" -dr out/m1-3b4b5d/m68kdeb-takeover-68030-trampoline.o \
+                > out/m1-3b4b5d/trampoline.disasm
+              "$OBJDUMP" -r out/m1-3b4b5d/m68kdeb-takeover-68030-trampoline.o \
+                > out/m1-3b4b5d/trampoline.reloc
+
+              cat out/m1-3b4b5d/trampoline.nm
+              cat out/m1-3b4b5d/trampoline.disasm
+              cat out/m1-3b4b5d/trampoline.reloc
+
+              grep -Eq "[[:space:]][Tt][[:space:]]m68kdeb_takeover_68030_trampoline_start$" out/m1-3b4b5d/trampoline.nm
+              grep -Eq "[[:space:]][Tt][[:space:]]m68kdeb_takeover_68030_trampoline_probe$" out/m1-3b4b5d/trampoline.nm
+              grep -Eq "[[:space:]][Tt][[:space:]]m68kdeb_takeover_68030_trampoline_end$" out/m1-3b4b5d/trampoline.nm
+
+              START=$(awk "/m68kdeb_takeover_68030_trampoline_start$/ {print \$1; exit}" out/m1-3b4b5d/trampoline.nm)
+              END=$(awk "/m68kdeb_takeover_68030_trampoline_end$/ {print \$1; exit}" out/m1-3b4b5d/trampoline.nm)
+              test -n "$START" && test -n "$END"
+              START_DEC=$(printf "%d" "0x$START")
+              END_DEC=$(printf "%d" "0x$END")
+              test "$END_DEC" -gt "$START_DEC"
+              SPAN=$((END_DEC - START_DEC))
+              test "$SPAN" -le 256
+              printf "trampoline_span=%s\n" "$SPAN" > out/m1-3b4b5d/BOUNDARIES.txt
+
+              if grep -Eq "^[[:space:]]*[0-9a-fA-F]+[[:space:]]+R_" out/m1-3b4b5d/trampoline.reloc; then
+                echo "trampoline contains relocation records" >&2
+                exit 1
+              fi
+            '
+
+      - name: Record PASS
+        run: |
+          {
+            echo 'result=PASS'
+            echo "git=${GITHUB_SHA}"
+            echo "workflow_run=${GITHUB_RUN_ID}"
+            echo 'classification=PHYSICAL_TRAMPOLINE_STATIC_GATE_PASS'
+            echo 'handoff=NOT_ATTEMPTED'
+            echo 'irreversible_commit_linked=0'
+            echo 'trampoline_linked=0'
+            cat out/m1-3b4b5d/BOUNDARIES.txt
+            sha256sum out/m1-3b4b5d/m68kdeb-loader \
+                      out/m1-3b4b5d/m68kdeb-takeover-68030.o \
+                      out/m1-3b4b5d/m68kdeb-takeover-68030-trampoline.o
+          } > out/m1-3b4b5d/RESULT.txt
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m1-3b4b5d-physical-trampoline-${{ github.sha }}
+          path: out/m1-3b4b5d/
+          if-no-files-found: warn
+          retention-days: 14
