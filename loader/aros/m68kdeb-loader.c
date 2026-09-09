@@ -4,6 +4,7 @@
  * M1.3b.1: native executable + Exec memory-map probe.
  * M1.3b.2: load an uncompressed Linux/m68k kernel, validate its advertised
  * Amiga bootinfo ABI, and construct a bootinfo record list in memory.
+ * M1.3b.3: optionally load an initramfs and describe it with BI_RAMDISK.
  *
  * Deliberately NO privileged takeover or kernel jump yet.
  */
@@ -14,7 +15,7 @@
 #include <proto/dos.h>
 #include <proto/exec.h>
 
-static const char version[] = "$VER: m68kdeb-loader 0.2 (09.09.2026)";
+static const char version[] = "$VER: m68kdeb-loader 0.3 (09.09.2026)";
 
 #define BOOTINFOV_MAGIC       0x4249561aUL
 #define AMIGA_BOOTI_VERSION   0x00020000UL
@@ -26,6 +27,7 @@ static const char version[] = "$VER: m68kdeb-loader 0.2 (09.09.2026)";
 #define BI_FPUTYPE            0x0003
 #define BI_MMUTYPE            0x0004
 #define BI_MEMCHUNK           0x0005
+#define BI_RAMDISK            0x0006
 #define BI_COMMAND_LINE       0x0007
 #define BI_AMIGA_MODEL        0x8000
 #define BI_AMIGA_CHIP_SIZE    0x8002
@@ -118,12 +120,18 @@ static int add_u32(struct bootinfo_builder *b, UWORD tag, ULONG value)
     return add_record(b, tag, p, sizeof(p));
 }
 
-static int add_memchunk(struct bootinfo_builder *b, ULONG addr, ULONG size)
+static int add_addr_size(struct bootinfo_builder *b, UWORD tag,
+                         ULONG addr, ULONG size)
 {
     UBYTE p[8];
     store_be32(p, addr);
     store_be32(p + 4, size);
-    return add_record(b, BI_MEMCHUNK, p, sizeof(p));
+    return add_record(b, tag, p, sizeof(p));
+}
+
+static int add_memchunk(struct bootinfo_builder *b, ULONG addr, ULONG size)
+{
+    return add_addr_size(b, BI_MEMCHUNK, addr, size);
 }
 
 static int add_string(struct bootinfo_builder *b, UWORD tag, const char *s)
@@ -155,9 +163,9 @@ static int validate_bootinfo(const UBYTE *b, ULONG used)
 }
 
 /*
- * vmlinux is an ELF32 big-endian m68k executable.  Linux links ENTRY(_start),
+ * vmlinux is an ELF32 big-endian m68k executable. Linux links ENTRY(_start),
  * while the bootinfo version table starts earlier at _stext in the same
- * loadable text segment.  Resolve the entry through PT_LOAD for a sanity
+ * loadable text segment. Resolve the entry through PT_LOAD for a sanity
  * check, then search only the file-backed bytes preceding _start in that
  * segment for BOOTINFOV_MAGIC and validate the machine/version pairs.
  */
@@ -362,13 +370,57 @@ static int probe_only(struct ExecBase *SysBase)
     return 0;
 }
 
-static int load_and_build(struct ExecBase *SysBase, const char *path, ULONG model)
+static UBYTE *load_public_file(const char *path, ULONG *size_out,
+                               const char *what)
 {
     BPTR fh;
     LONG size_long;
     LONG got;
+    UBYTE *data;
+
+    fh = Open((STRPTR)path, MODE_OLDFILE);
+    if (!fh) {
+        Printf("M68KDEB_LOADER_ERROR %s_open path=%s\n", what, path);
+        return NULL;
+    }
+
+    if (Seek(fh, 0, OFFSET_END) < 0 ||
+        (size_long = Seek(fh, 0, OFFSET_CURRENT)) <= 0 ||
+        Seek(fh, 0, OFFSET_BEGINNING) < 0) {
+        Printf("M68KDEB_LOADER_ERROR %s_seek\n", what);
+        Close(fh);
+        return NULL;
+    }
+
+    data = (UBYTE *)AllocMem((ULONG)size_long, MEMF_PUBLIC);
+    if (!data) {
+        Printf("M68KDEB_LOADER_ERROR %s_alloc bytes=%lu\n",
+               what, (ULONG)size_long);
+        Close(fh);
+        return NULL;
+    }
+
+    got = Read(fh, data, size_long);
+    Close(fh);
+    if (got != size_long) {
+        Printf("M68KDEB_LOADER_ERROR %s_read expected=%lu got=%lu\n",
+               what, (ULONG)size_long, (ULONG)got);
+        FreeMem(data, (ULONG)size_long);
+        return NULL;
+    }
+
+    *size_out = (ULONG)size_long;
+    return data;
+}
+
+static int load_and_build(struct ExecBase *SysBase, const char *path,
+                          const char *initramfs_path, ULONG model)
+{
     UBYTE *kernel = NULL;
+    UBYTE *initramfs = NULL;
     UBYTE *bootinfo = NULL;
+    ULONG kernel_size = 0;
+    ULONG initramfs_size = 0;
     struct bootinfo_builder bb;
     struct MemHeader *mh;
     ULONG kernel_entry = 0;
@@ -381,39 +433,14 @@ static int load_and_build(struct ExecBase *SysBase, const char *path, ULONG mode
     static const char cmdline[] = "root=/dev/ram video=pal console=ttyS0,9600n8";
     int rc = 20;
 
-    fh = Open((STRPTR)path, MODE_OLDFILE);
-    if (!fh) {
-        Printf("M68KDEB_LOADER_ERROR kernel_open path=%s\n", path);
+    kernel = load_public_file(path, &kernel_size, "kernel");
+    if (!kernel)
         return 20;
-    }
-
-    if (Seek(fh, 0, OFFSET_END) < 0 ||
-        (size_long = Seek(fh, 0, OFFSET_CURRENT)) <= 0 ||
-        Seek(fh, 0, OFFSET_BEGINNING) < 0) {
-        Printf("M68KDEB_LOADER_ERROR kernel_seek\n");
-        Close(fh);
-        return 20;
-    }
-
-    kernel = (UBYTE *)AllocMem((ULONG)size_long, MEMF_PUBLIC);
-    if (!kernel) {
-        Printf("M68KDEB_LOADER_ERROR kernel_alloc bytes=%lu\n", (ULONG)size_long);
-        Close(fh);
-        return 20;
-    }
-
-    got = Read(fh, kernel, size_long);
-    Close(fh);
-    if (got != size_long) {
-        Printf("M68KDEB_LOADER_ERROR kernel_read expected=%lu got=%lu\n",
-               (ULONG)size_long, (ULONG)got);
-        goto out;
-    }
 
     Printf("M68KDEB_KERNEL_LOADED path=%s addr=0x%08lx bytes=%lu\n",
-           path, (ULONG)kernel, (ULONG)size_long);
+           path, (ULONG)kernel, kernel_size);
 
-    if (!kernel_supports_amiga_bootinfo(kernel, (ULONG)size_long,
+    if (!kernel_supports_amiga_bootinfo(kernel, kernel_size,
                                         &kernel_entry, &kernel_entry_offset,
                                         &magic_offset, &advertised_version)) {
         Printf("M68KDEB_LOADER_ERROR bootinfo_abi entry=0x%08lx entry_file_offset=%lu magic_offset=%lu advertised=0x%08lx expected=0x%08lx\n",
@@ -427,6 +454,14 @@ static int load_and_build(struct ExecBase *SysBase, const char *path, ULONG mode
     Printf("kernel_entry_file_offset=%lu\n", kernel_entry_offset);
     Printf("kernel_bootinfo_magic_offset=%lu\n", magic_offset);
     Printf("kernel_amiga_bootinfo_version=0x%08lx\n", advertised_version);
+
+    if (initramfs_path) {
+        initramfs = load_public_file(initramfs_path, &initramfs_size, "initramfs");
+        if (!initramfs)
+            goto out;
+        Printf("M68KDEB_INITRAMFS_LOADED path=%s addr=0x%08lx bytes=%lu\n",
+               initramfs_path, (ULONG)initramfs, initramfs_size);
+    }
 
     cpu = detect_cpu(SysBase->AttnFlags);
     mmu = detect_mmu(cpu);
@@ -477,8 +512,18 @@ static int load_and_build(struct ExecBase *SysBase, const char *path, ULONG mode
         regions++;
     }
 
-    if (!add_u32(&bb, BI_AMIGA_CHIP_SIZE, chip_size) ||
-        !add_string(&bb, BI_COMMAND_LINE, cmdline) ||
+    if (!add_u32(&bb, BI_AMIGA_CHIP_SIZE, chip_size)) {
+        Printf("M68KDEB_LOADER_ERROR bootinfo_chip_record\n");
+        goto out;
+    }
+
+    if (initramfs &&
+        !add_addr_size(&bb, BI_RAMDISK, (ULONG)initramfs, initramfs_size)) {
+        Printf("M68KDEB_LOADER_ERROR bootinfo_ramdisk_record\n");
+        goto out;
+    }
+
+    if (!add_string(&bb, BI_COMMAND_LINE, cmdline) ||
         !add_record(&bb, BI_LAST, NULL, 0)) {
         Printf("M68KDEB_LOADER_ERROR bootinfo_tail_records\n");
         goto out;
@@ -499,6 +544,10 @@ static int load_and_build(struct ExecBase *SysBase, const char *path, ULONG mode
     Printf("bootinfo_mmu=0x%08lx\n", mmu);
     Printf("bootinfo_amiga_model=%lu\n", model);
     Printf("bootinfo_chip_size=%lu\n", chip_size);
+    if (initramfs) {
+        Printf("bootinfo_ramdisk_addr=0x%08lx\n", (ULONG)initramfs);
+        Printf("bootinfo_ramdisk_bytes=%lu\n", initramfs_size);
+    }
     Printf("bootinfo_cmdline=%s\n", cmdline);
     Printf("handoff=NOT_ATTEMPTED\n");
     Printf("M68KDEB_BOOTINFO_BUILD_OK\n");
@@ -507,15 +556,19 @@ static int load_and_build(struct ExecBase *SysBase, const char *path, ULONG mode
 out:
     if (bootinfo)
         FreeMem(bootinfo, BOOTINFO_CAPACITY);
+    if (initramfs)
+        FreeMem(initramfs, initramfs_size);
     if (kernel)
-        FreeMem(kernel, (ULONG)size_long);
+        FreeMem(kernel, kernel_size);
     return rc;
 }
 
 int main(int argc, char **argv)
 {
     struct ExecBase *SysBase = *((struct ExecBase **)4UL);
+    const char *initramfs_path = NULL;
     ULONG model = DEFAULT_AMIGA_MODEL;
+    LONG parsed = 0;
 
     (void)version;
 
@@ -527,10 +580,23 @@ int main(int argc, char **argv)
     if (argc < 2)
         return probe_only(SysBase);
 
+    /*
+     * Backward compatible CLI:
+     *   loader kernel [model]
+     * M1.3b.3 extension:
+     *   loader kernel initramfs [model]
+     */
     if (argc >= 3) {
-        LONG parsed = 0;
-        if (StrToLong((STRPTR)argv[2], &parsed) > 0 && parsed > 0)
+        if (StrToLong((STRPTR)argv[2], &parsed) > 0 && parsed > 0) {
             model = (ULONG)parsed;
+        } else {
+            initramfs_path = argv[2];
+            if (argc >= 4) {
+                parsed = 0;
+                if (StrToLong((STRPTR)argv[3], &parsed) > 0 && parsed > 0)
+                    model = (ULONG)parsed;
+            }
+        }
     }
 
     Printf("M68KDEB_LOADER_START mode=bootinfo-build\n");
@@ -538,5 +604,5 @@ int main(int argc, char **argv)
            (ULONG)SysBase->LibNode.lib_Version,
            (ULONG)SysBase->LibNode.lib_Revision);
     Printf("attn_flags=0x%04lx\n", (ULONG)SysBase->AttnFlags);
-    return load_and_build(SysBase, argv[1], model);
+    return load_and_build(SysBase, argv[1], initramfs_path, model);
 }
