@@ -1,0 +1,21 @@
+[fs-uae]
+amiga_model = A1200
+cpu = 68030
+kickstart_file = out/m1-3a15/rom/aros-rom.bin
+kickstart_ext_file = out/m1-3a15/rom/aros-ext.bin
+uae_cpu_speed = real
+zorro_iii_memory = 65536
+hard_drive_0 = out/m1-3a15/aros-root
+hard_drive_0_label = System
+hard_drive_0_read_only = 0
+serial_port = /tmp/m68kdeb-fsuae-serial
+fullscreen = 0
+window_width = 752
+window_height = 576
+logs_dir = out/m1-3a15/logs
+screenshots_dir = out/m1-3a15/screenshots
+
+# M1.3a.15 preserves the M1.3a.14 topology exactly, but invokes amiboot
+# without -d/--debug. Historical amiboot documentation shows debug mode can
+# stop at an interactive "Type a key to continue..." boundary, which is fatal
+# to an unattended GitHub Actions run and matches the observed handoff stall.
