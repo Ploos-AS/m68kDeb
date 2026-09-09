@@ -51,7 +51,7 @@ jobs:
                 -noixemul
               "$CC" -c loader/aros/m68kdeb-takeover-68030.S \
                 -o out/m1-3b4b/m68kdeb-takeover-68030.o \
-                -m68030
+                -m68030 -m68851
               "$CC" -c loader/aros/m68kdeb-takeover-68030-mmuprobe.S \
                 -o out/m1-3b4b/m68kdeb-takeover-68030-mmuprobe.o \
                 -m68030 -m68851
@@ -84,17 +84,26 @@ jobs:
               test -x "$NM" && test -x "$OBJDUMP"
 
               "$NM" out/m1-3b4b/m68kdeb-takeover-68030.o > out/m1-3b4b/m68kdeb-takeover-68030.nm
+              cat out/m1-3b4b/m68kdeb-takeover-68030.nm
               grep -Eq "[[:space:]][Tt][[:space:]]m68kdeb_takeover_68030_supervisor_probe$" out/m1-3b4b/m68kdeb-takeover-68030.nm
               grep -Eq "[[:space:]][Tt][[:space:]]m68kdeb_takeover_68030_commit$" out/m1-3b4b/m68kdeb-takeover-68030.nm
               grep -Eq "[[:space:]][Tt][[:space:]]m68kdeb_takeover_68030_commit_boundary$" out/m1-3b4b/m68kdeb-takeover-68030.nm
+              grep -Eq "[[:space:]][Tt][[:space:]]m68kdeb_takeover_68030_cache_mmu_boundary$" out/m1-3b4b/m68kdeb-takeover-68030.nm
               "$OBJDUMP" -dr out/m1-3b4b/m68kdeb-takeover-68030.o > out/m1-3b4b/m68kdeb-takeover-68030.disasm
+              cat out/m1-3b4b/m68kdeb-takeover-68030.disasm
+              grep -Eiq "movec.*cacr|cacr.*movec" out/m1-3b4b/m68kdeb-takeover-68030.disasm
+              grep -Eiq "pmove.*tc|tc.*pmove" out/m1-3b4b/m68kdeb-takeover-68030.disasm
+              grep -Eiq "pflusha" out/m1-3b4b/m68kdeb-takeover-68030.disasm
               grep -Eq "^[[:space:]]*ori\\.w[[:space:]]+#0x0700,%sr$" loader/aros/m68kdeb-takeover-68030.S
 
+              COMMIT=$(awk "/m68kdeb_takeover_68030_commit_boundary:/ {print \$1; exit}" out/m1-3b4b/m68kdeb-takeover-68030.disasm)
+              MMU=$(awk "/m68kdeb_takeover_68030_cache_mmu_boundary:/ {print \$1; exit}" out/m1-3b4b/m68kdeb-takeover-68030.disasm)
+              test -n "$COMMIT" && test -n "$MMU"
+              test $((16#$MMU)) -gt $((16#$COMMIT))
+
               "$NM" out/m1-3b4b/m68kdeb-takeover-68030-mmuprobe.o > out/m1-3b4b/m68kdeb-takeover-68030-mmuprobe.nm
-              cat out/m1-3b4b/m68kdeb-takeover-68030-mmuprobe.nm
               grep -Eq "[[:space:]][Tt][[:space:]]m68kdeb_takeover_68030_cache_mmu_instruction_probe$" out/m1-3b4b/m68kdeb-takeover-68030-mmuprobe.nm
               "$OBJDUMP" -dr out/m1-3b4b/m68kdeb-takeover-68030-mmuprobe.o > out/m1-3b4b/m68kdeb-takeover-68030-mmuprobe.disasm
-              cat out/m1-3b4b/m68kdeb-takeover-68030-mmuprobe.disasm
               grep -Eiq "movec.*cacr|cacr.*movec" out/m1-3b4b/m68kdeb-takeover-68030-mmuprobe.disasm
               grep -Eiq "pmove.*tc|tc.*pmove" out/m1-3b4b/m68kdeb-takeover-68030-mmuprobe.disasm
               grep -Eiq "pflusha" out/m1-3b4b/m68kdeb-takeover-68030-mmuprobe.disasm
