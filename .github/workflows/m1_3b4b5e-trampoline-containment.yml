@@ -1,0 +1,152 @@
+name: M1.3b.4b.5e trampoline containment gate
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'loader/aros/m68kdeb-loader.c'
+      - 'loader/aros/m68kdeb-layout.c'
+      - 'loader/aros/m68kdeb-layout.h'
+      - 'loader/aros/m68kdeb-handoff.c'
+      - 'loader/aros/m68kdeb-handoff.h'
+      - 'loader/aros/m68kdeb-takeover.c'
+      - 'loader/aros/m68kdeb-takeover.h'
+      - 'loader/aros/m68kdeb-takeover-68030.S'
+      - 'loader/aros/m68kdeb-takeover-68030-trampoline.S'
+      - 'docs/M1_3B4B5E_TRAMPOLINE_CONTAINMENT.md'
+      - '.github/workflows/m1_3b4b5e-trampoline-containment.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build reversible loader and isolated trampoline
+        run: |
+          mkdir -p out/m1-3b4b5e
+          docker pull amigadev/m68k-amigaos-gcc:latest
+          docker run --rm -v "$PWD:/work" -w /work \
+            amigadev/m68k-amigaos-gcc:latest sh -lc '
+              set -eu
+              CC=$(find /opt/amiga -type f -name "m68k-amigaos-gcc" | head -n 1)
+              test -x "$CC"
+              "$CC" \
+                loader/aros/m68kdeb-loader.c \
+                loader/aros/m68kdeb-layout.c \
+                loader/aros/m68kdeb-handoff.c \
+                loader/aros/m68kdeb-takeover.c \
+                -o out/m1-3b4b5e/m68kdeb-loader \
+                -m68000 -Os -Wall -Wextra -Werror \
+                -Wno-error=pointer-sign -Wno-error=int-conversion \
+                -noixemul
+              "$CC" -c loader/aros/m68kdeb-takeover-68030-trampoline.S \
+                -o out/m1-3b4b5e/m68kdeb-takeover-68030-trampoline.o \
+                -m68030 -m68851
+            '
+
+      - name: Verify containment and relocation freedom
+        run: |
+          set -eu
+          if strings out/m1-3b4b5e/m68kdeb-loader | grep -q 'm68kdeb_takeover_68030_commit'; then
+            echo 'irreversible commit path unexpectedly linked into reversible loader' >&2
+            exit 1
+          fi
+          if strings out/m1-3b4b5e/m68kdeb-loader | grep -q 'm68kdeb_takeover_68030_trampoline'; then
+            echo 'trampoline unexpectedly linked into reversible loader' >&2
+            exit 1
+          fi
+
+          docker run --rm -v "$PWD:/work" -w /work \
+            amigadev/m68k-amigaos-gcc:latest sh -lc '
+              set -eu
+              NM=$(find /opt/amiga -type f -name "m68k-amigaos-nm" | head -n 1)
+              OBJDUMP=$(find /opt/amiga -type f -name "m68k-amigaos-objdump" | head -n 1)
+              test -x "$NM" && test -x "$OBJDUMP"
+
+              OBJ=out/m1-3b4b5e/m68kdeb-takeover-68030-trampoline.o
+              "$NM" -n "$OBJ" > out/m1-3b4b5e/trampoline.nm
+              "$OBJDUMP" -dr "$OBJ" > out/m1-3b4b5e/trampoline.disasm
+              "$OBJDUMP" -r "$OBJ" > out/m1-3b4b5e/trampoline.reloc
+
+              for sym in \
+                m68kdeb_takeover_68030_trampoline_start \
+                m68kdeb_takeover_68030_trampoline_entry \
+                m68kdeb_takeover_68030_trampoline_mmu_off \
+                m68kdeb_takeover_68030_trampoline_post_mmu \
+                m68kdeb_takeover_68030_trampoline_tc_zero \
+                m68kdeb_takeover_68030_trampoline_end; do
+                grep -Eq "[[:space:]][Tt][[:space:]]${sym}$" out/m1-3b4b5e/trampoline.nm
+              done
+
+              addr() { awk -v s="$1" "\$3 == s {print \$1; exit}" out/m1-3b4b5e/trampoline.nm; }
+              START=$(addr m68kdeb_takeover_68030_trampoline_start)
+              ENTRY=$(addr m68kdeb_takeover_68030_trampoline_entry)
+              MMU=$(addr m68kdeb_takeover_68030_trampoline_mmu_off)
+              POST=$(addr m68kdeb_takeover_68030_trampoline_post_mmu)
+              ZERO=$(addr m68kdeb_takeover_68030_trampoline_tc_zero)
+              END=$(addr m68kdeb_takeover_68030_trampoline_end)
+
+              for v in START ENTRY MMU POST ZERO END; do eval "test -n \"\${$v}\""; done
+              START_D=$((0x$START)); ENTRY_D=$((0x$ENTRY)); MMU_D=$((0x$MMU))
+              POST_D=$((0x$POST)); ZERO_D=$((0x$ZERO)); END_D=$((0x$END))
+
+              test "$ENTRY_D" -eq "$START_D"
+              test "$MMU_D" -ge "$START_D" && test "$MMU_D" -lt "$END_D"
+              test "$POST_D" -gt "$MMU_D" && test "$POST_D" -lt "$END_D"
+              test "$ZERO_D" -gt "$POST_D" && test "$ZERO_D" -lt "$END_D"
+              test "$END_D" -gt "$START_D"
+              SPAN=$((END_D - START_D))
+              test "$SPAN" -le 4096
+
+              if grep -Eq "^[[:space:]]*[0-9a-fA-F]+[[:space:]]+R_" out/m1-3b4b5e/trampoline.reloc; then
+                echo 'trampoline contains relocation records' >&2
+                exit 1
+              fi
+
+              grep -Eqi "movec.*cacr|cacr.*movec" out/m1-3b4b5e/trampoline.disasm
+              grep -Eqi "pmove.*tc|tc.*pmove" out/m1-3b4b5e/trampoline.disasm
+              grep -Eqi "pflusha" out/m1-3b4b5e/trampoline.disasm
+              grep -Eqi "bra" out/m1-3b4b5e/trampoline.disasm
+
+              {
+                echo "start=0x$START"
+                echo "entry=0x$ENTRY"
+                echo "mmu_off=0x$MMU"
+                echo "post_mmu=0x$POST"
+                echo "tc_zero=0x$ZERO"
+                echo "end=0x$END"
+                echo "span_bytes=$SPAN"
+              } > out/m1-3b4b5e/BOUNDARIES.txt
+            '
+
+      - name: Record PASS
+        run: |
+          {
+            echo 'result=PASS'
+            echo "git=${GITHUB_SHA}"
+            echo "workflow_run=${GITHUB_RUN_ID}"
+            echo 'classification=TRAMPOLINE_CONTAINMENT_STATIC_GATE_PASS'
+            echo 'runtime_execution=NOT_ATTEMPTED'
+            echo 'physical_identity_mapping=NOT_PROVEN'
+            echo 'linux_entry_transfer=NOT_IMPLEMENTED'
+            echo 'irreversible_commit_linked=0'
+            echo 'trampoline_linked=0'
+            cat out/m1-3b4b5e/BOUNDARIES.txt
+            sha256sum out/m1-3b4b5e/m68kdeb-loader \
+                      out/m1-3b4b5e/m68kdeb-takeover-68030-trampoline.o
+          } > out/m1-3b4b5e/RESULT.txt
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m1-3b4b5e-trampoline-containment-${{ github.sha }}
+          path: out/m1-3b4b5e/
+          if-no-files-found: warn
+          retention-days: 14
