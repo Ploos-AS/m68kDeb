@@ -1,0 +1,65 @@
+name: M1.3b.4b AROS takeover preflight
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'loader/aros/m68kdeb-loader.c'
+      - 'loader/aros/m68kdeb-layout.c'
+      - 'loader/aros/m68kdeb-layout.h'
+      - 'loader/aros/m68kdeb-handoff.c'
+      - 'loader/aros/m68kdeb-handoff.h'
+      - 'loader/aros/m68kdeb-takeover.c'
+      - 'loader/aros/m68kdeb-takeover.h'
+      - '.github/workflows/m1_3b4b-aros-takeover-preflight.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build reversible 4b loader with Bebbo
+        run: |
+          mkdir -p out/m1-3b4b
+          docker pull amigadev/m68k-amigaos-gcc:latest
+          docker run --rm \
+            -v "$PWD:/work" -w /work \
+            amigadev/m68k-amigaos-gcc:latest \
+            sh -lc '
+              set -eu
+              find / -type f \( -name "m68k-amigaos-gcc" -o -name "*amigaos*gcc" -o -name "m68k-*-gcc" \) 2>/dev/null | sort > /tmp/compiler-candidates.txt
+              CC=$(awk "/\/m68k-amigaos-gcc$/ { print; exit }" /tmp/compiler-candidates.txt)
+              if [ -z "$CC" ]; then CC=$(head -n 1 /tmp/compiler-candidates.txt || true); fi
+              test -n "$CC" && test -x "$CC"
+              "$CC" --version | head -n 3
+              "$CC" \
+                loader/aros/m68kdeb-loader.c \
+                loader/aros/m68kdeb-layout.c \
+                loader/aros/m68kdeb-handoff.c \
+                loader/aros/m68kdeb-takeover.c \
+                -o out/m1-3b4b/m68kdeb-loader \
+                -m68000 -Os -Wall -Wextra -Werror -noixemul
+            '
+          file out/m1-3b4b/m68kdeb-loader
+          sha256sum out/m1-3b4b/m68kdeb-loader | tee out/m1-3b4b/SHA256SUMS
+
+      - name: Verify irreversible symbol is not linked
+        run: |
+          if strings out/m1-3b4b/m68kdeb-loader | grep -q 'M68KDEB_TAKEOVER_COMMIT'; then
+            echo 'unexpected irreversible takeover marker in reversible gate' >&2
+            exit 1
+          fi
+          strings out/m1-3b4b/m68kdeb-loader | grep -q 'M68KDEB_TAKEOVER_PREFLIGHT_OK'
+          strings out/m1-3b4b/m68kdeb-loader | grep -q 'handoff=NOT_ATTEMPTED'
+
+      - name: Upload reversible loader
+        uses: actions/upload-artifact@v4
+        with:
+          name: m1-3b4b-reversible-loader
+          path: out/m1-3b4b/
