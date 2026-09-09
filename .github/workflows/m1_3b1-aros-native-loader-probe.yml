@@ -28,15 +28,14 @@ jobs:
           fs-uae --version
           docker --version
 
-      - name: Build AmigaOS-compatible m68k loader probe
+      - name: Build with Bebbo m68k-amigaos-gcc
         run: |
           mkdir -p out/m68kdeb-loader
+          docker pull amigadev/m68k-amigaos-gcc:latest
           docker run --rm \
             -v "$PWD:/work" -w /work \
-            sebastianbergmann/amiga-gcc:latest \
-            m68k-amigaos-gcc loader/aros/m68kdeb-loader.c \
-              -o out/m68kdeb-loader/m68kdeb-loader \
-              -m68000 -Os -Wall -Wextra -noixemul
+            amigadev/m68k-amigaos-gcc:latest \
+            sh -lc 'm68k-amigaos-gcc --version | head -n 3; m68k-amigaos-gcc loader/aros/m68kdeb-loader.c -o out/m68kdeb-loader/m68kdeb-loader -m68000 -Os -Wall -Wextra -noixemul'
           file out/m68kdeb-loader/m68kdeb-loader
           sha256sum out/m68kdeb-loader/m68kdeb-loader | tee out/m68kdeb-loader/SHA256SUMS
 
@@ -97,6 +96,7 @@ jobs:
             echo 'result=PASS'
             echo "git=${GITHUB_SHA}"
             echo "workflow_run=${GITHUB_RUN_ID}"
+            echo 'toolchain=Bebbo m68k-amigaos-gcc via amigadev/m68k-amigaos-gcc:latest'
             cat out/m1-3b1/CLASSIFICATION.txt
             cat out/m1-3b1/BOUNDARIES.txt
             cat out/m1-3b1/RUNTIME_PROVENANCE.txt
