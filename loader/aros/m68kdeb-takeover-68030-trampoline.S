@@ -1,26 +1,49 @@
 /*
- * m68kDeb M1.3b.4b.5d MC68030 physical-transition trampoline probe.
+ * m68kDeb M1.3b.4b.5e MC68030 physical-transition trampoline.
  *
- * Compile/static qualification only.  This object MUST NOT be linked into the
- * real loader or executed yet.  It establishes a tiny relocation-free,
- * position-independent code blob that can later be copied to a qualified
- * physical==logical address before translation is disabled.
+ * Compile/static qualification only. This object MUST NOT be linked into the
+ * real loader or executed yet. It defines the complete instruction/data span
+ * that would have to reside at a qualified physical==logical address before
+ * translation can safely be disabled.
  *
- * No cache/MMU manipulation and no Linux jump are performed here.
+ * The 5e gate proves containment and relocation freedom only. It does NOT
+ * prove that any AROS virtual address equals its physical address, and it does
+ * NOT authorize runtime execution.
  */
 
     .text
     .align  2
     .globl  m68kdeb_takeover_68030_trampoline_start
+    .globl  m68kdeb_takeover_68030_trampoline_entry
+    .globl  m68kdeb_takeover_68030_trampoline_mmu_off
+    .globl  m68kdeb_takeover_68030_trampoline_post_mmu
     .globl  m68kdeb_takeover_68030_trampoline_end
-    .globl  m68kdeb_takeover_68030_trampoline_probe
-    .type   m68kdeb_takeover_68030_trampoline_probe,@function
+    .type   m68kdeb_takeover_68030_trampoline_entry,@function
 
 m68kdeb_takeover_68030_trampoline_start:
-m68kdeb_takeover_68030_trampoline_probe:
-    /* Deliberately position-independent and side-effect free for 5d. */
+m68kdeb_takeover_68030_trampoline_entry:
+    /* Disable MC68030 caches before the translation-state transition. */
     moveq   #0,%d0
-    rts
+    movec   %d0,%cacr
+
+    /* TC=0 expresses the intended translation-disable operation. */
+    lea     .Lzero_tc(%pc),%a0
+m68kdeb_takeover_68030_trampoline_mmu_off:
+    pmove   (%a0),%tc
+
+m68kdeb_takeover_68030_trampoline_post_mmu:
+    /* Every instruction fetched from here must remain physically reachable. */
+    pflusha
+
+    /* 5e intentionally has no kernel jump. A runtime-capable successor will
+     * replace this halt only after physical placement and entry ABI are proven.
+     */
+.Lhalt:
+    bra.s   .Lhalt
+
+    .align  2
+.Lzero_tc:
+    .long   0
 m68kdeb_takeover_68030_trampoline_end:
 
-    .size m68kdeb_takeover_68030_trampoline_probe,.-m68kdeb_takeover_68030_trampoline_probe
+    .size m68kdeb_takeover_68030_trampoline_entry,.-m68kdeb_takeover_68030_trampoline_entry
