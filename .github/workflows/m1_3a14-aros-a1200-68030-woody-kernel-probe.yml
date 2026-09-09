@@ -1,0 +1,188 @@
+name: M1.3a.14 AROS A1200 68030 Debian woody kernel probe
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/m1_3a14-aros-a1200-68030-woody-kernel-probe.yml'
+      - 'ci/fs-uae/m1_3a14_aros_a1200_68030_woody_kernel_probe.fs-uae'
+      - 'ci/fs-uae/prepare-m1_3a14-woody-kernel-probe.sh'
+      - 'platforms/amiga/fetch-amiboot.sh'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ca-certificates curl fs-uae scrot socat unzip xvfb xorriso
+          fs-uae --version
+
+      - name: Fetch amiboot and Debian woody Amiga kernel
+        run: |
+          sh platforms/amiga/fetch-amiboot.sh
+          mkdir -p out/m68kdeb-amiga
+          cp out/amiboot/amiboot out/m68kdeb-amiga/amiboot
+
+          WOODY_KERNEL_URL='https://archive.debian.org/debian/dists/woody/main/disks-m68k/current/amiga/linux.bin'
+          curl -fL --retry 3 --retry-delay 2 "$WOODY_KERNEL_URL" \
+            -o out/m68kdeb-amiga/woody-linux.bin
+
+          {
+            echo "woody_kernel_url=$WOODY_KERNEL_URL"
+            printf 'woody_kernel_sha256='; sha256sum out/m68kdeb-amiga/woody-linux.bin | awk '{print $1}'
+            printf 'woody_kernel_bytes='; wc -c < out/m68kdeb-amiga/woody-linux.bin
+          } | tee out/m68kdeb-amiga/WOODY_KERNEL_PROVENANCE.txt
+
+          sha256sum out/m68kdeb-amiga/amiboot out/m68kdeb-amiga/woody-linux.bin
+          file out/m68kdeb-amiga/woody-linux.bin || true
+
+      - name: Prepare historical-kernel control topology
+        run: sh ci/fs-uae/prepare-m1_3a14-woody-kernel-probe.sh
+
+      - name: Boot AROS and classify historical kernel handoff
+        run: |
+          mkdir -p out/m1-3a14/logs out/m1-3a14/screenshots
+          rm -f /tmp/m68kdeb-fsuae-serial /tmp/m68kdeb-capture-serial
+
+          socat -d -d \
+            pty,raw,echo=0,link=/tmp/m68kdeb-fsuae-serial \
+            pty,raw,echo=0,link=/tmp/m68kdeb-capture-serial \
+            2>out/m1-3a14/socat.log &
+          bridge=$!
+
+          for i in $(seq 1 20); do
+            [ -e /tmp/m68kdeb-fsuae-serial ] && [ -e /tmp/m68kdeb-capture-serial ] && break
+            sleep 1
+          done
+          [ -e /tmp/m68kdeb-fsuae-serial ] && [ -e /tmp/m68kdeb-capture-serial ] || exit 1
+
+          timeout 600 cat /tmp/m68kdeb-capture-serial >out/m1-3a14/serial.log &
+          serial=$!
+
+          set +e
+          xvfb-run -a sh -eu -c '
+            fs-uae ci/fs-uae/m1_3a14_aros_a1200_68030_woody_kernel_probe.fs-uae >out/m1-3a14/fs-uae.stdout.log 2>&1 &
+            emu=$!
+            startup=0
+            pre_handoff=0
+            returned=0
+            linux=0
+            emulator_exited=0
+
+            for i in $(seq 1 600); do
+              [ -f out/m1-3a14/aros-root/m1-3a14-startup.marker ] && startup=1
+              [ -f out/m1-3a14/aros-root/m1-3a14-pre-handoff.marker ] && pre_handoff=1
+              [ -f out/m1-3a14/aros-root/m1-3a14-amiboot-returned.marker ] && returned=1
+
+              if grep -Eiq "Linux version|Calibrating delay loop|Memory:|Kernel panic|VFS:|Unable to mount root|amiga" out/m1-3a14/serial.log 2>/dev/null; then
+                linux=1
+                break
+              fi
+
+              if [ "$returned" -eq 1 ]; then
+                break
+              fi
+
+              if ! kill -0 "$emu" 2>/dev/null; then
+                emulator_exited=1
+                break
+              fi
+              sleep 1
+            done
+
+            scrot out/m1-3a14/screenshots/m1-3a14-woody-kernel.png || true
+            kill -INT "$emu" 2>/dev/null || true
+            sleep 2
+            kill -TERM "$emu" 2>/dev/null || true
+            wait "$emu" 2>/dev/null || true
+
+            printf "startup=%s\npre_handoff=%s\namiboot_returned=%s\nlinux=%s\nemulator_exited=%s\n" \
+              "$startup" "$pre_handoff" "$returned" "$linux" "$emulator_exited" \
+              > out/m1-3a14/BOUNDARIES.txt
+
+            if [ "$startup" -ne 1 ]; then
+              echo "classification=AROS_STARTUP_FAILURE" > out/m1-3a14/CLASSIFICATION.txt
+              exit 1
+            fi
+            if [ "$pre_handoff" -ne 1 ]; then
+              echo "classification=PRE_HANDOFF_MARKER_FAILURE" > out/m1-3a14/CLASSIFICATION.txt
+              exit 1
+            fi
+            if [ "$linux" -eq 1 ]; then
+              echo "classification=HISTORICAL_LINUX_KERNEL_EXECUTION_OBSERVED" > out/m1-3a14/CLASSIFICATION.txt
+              exit 0
+            fi
+            if [ "$returned" -eq 1 ]; then
+              echo "classification=AMIBOOT_RETURNED_WITHOUT_HISTORICAL_LINUX" > out/m1-3a14/CLASSIFICATION.txt
+              exit 1
+            fi
+            if [ "$emulator_exited" -eq 1 ]; then
+              echo "classification=EMULATOR_EXIT_DURING_HISTORICAL_HANDOFF" > out/m1-3a14/CLASSIFICATION.txt
+              exit 1
+            fi
+            echo "classification=HISTORICAL_HANDOFF_STALL_NO_RETURN_NO_LINUX" > out/m1-3a14/CLASSIFICATION.txt
+            exit 1
+          '
+          rc=$?
+          set -e
+
+          kill -TERM "$serial" 2>/dev/null || true
+          kill -TERM "$bridge" 2>/dev/null || true
+          wait "$serial" 2>/dev/null || true
+          wait "$bridge" 2>/dev/null || true
+
+          echo '=== BOUNDARIES ==='
+          cat out/m1-3a14/BOUNDARIES.txt || true
+          echo '=== CLASSIFICATION ==='
+          cat out/m1-3a14/CLASSIFICATION.txt || true
+          echo '=== SERIAL TAIL ==='
+          tail -300 out/m1-3a14/serial.log || true
+          echo '=== FS-UAE TAIL ==='
+          tail -300 out/m1-3a14/fs-uae.stdout.log || true
+          exit "$rc"
+
+      - name: Record diagnostic PASS
+        run: |
+          {
+            echo "result=PASS"
+            echo "git=${GITHUB_SHA}"
+            echo "workflow_run=${GITHUB_RUN_ID}"
+            cat out/m1-3a14/CLASSIFICATION.txt
+            cat out/m1-3a14/BOUNDARIES.txt
+            cat out/m1-3a14/RUNTIME_PROVENANCE.txt
+            cat out/m68kdeb-amiga/WOODY_KERNEL_PROVENANCE.txt
+            fs-uae --version | head -n 1 | sed 's/^/fs_uae=/'
+          } > out/m1-3a14/RESULT.txt
+
+      - name: Upload diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m1-3a14-woody-kernel-${{ github.sha }}
+          path: |
+            out/m1-3a14/RESULT.txt
+            out/m1-3a14/BOUNDARIES.txt
+            out/m1-3a14/CLASSIFICATION.txt
+            out/m1-3a14/RUNTIME_PROVENANCE.txt
+            out/m1-3a14/ORIGINAL-Startup-Sequence
+            out/m1-3a14/aros-root/S/Startup-Sequence
+            out/m1-3a14/aros-root/m1-3a14-*.marker
+            out/m1-3a14/serial.log
+            out/m1-3a14/socat.log
+            out/m1-3a14/fs-uae.stdout.log
+            out/m1-3a14/rom/
+            out/m1-3a14/screenshots/
+            out/m68kdeb-amiga/WOODY_KERNEL_PROVENANCE.txt
+            out/amiboot/SHA256SUMS
+          if-no-files-found: warn
+          retention-days: 14
