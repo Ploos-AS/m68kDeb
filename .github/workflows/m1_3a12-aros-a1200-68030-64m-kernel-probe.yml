@@ -1,0 +1,155 @@
+name: M1.3a.12 AROS A1200 68030 64M kernel probe
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/m1_3a12-aros-a1200-68030-64m-kernel-probe.yml'
+      - 'ci/fs-uae/m1_3a12_aros_a1200_68030_64m_kernel_probe.fs-uae'
+      - 'ci/fs-uae/prepare-m1_3a12-kernel-memory-probe.sh'
+      - 'kernel/build-amiga.sh'
+      - 'platforms/amiga/fetch-amiboot.sh'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build and runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bc bison build-essential ca-certificates curl flex fs-uae \
+            gcc-m68k-linux-gnu libelf-dev libssl-dev make scrot socat \
+            unzip xvfb xorriso xz-utils
+          fs-uae --version
+
+      - name: Build pinned Amiga kernel and fetch amiboot
+        run: |
+          sh kernel/build-amiga.sh
+          sh platforms/amiga/fetch-amiboot.sh
+          mkdir -p out/m68kdeb-amiga
+          cp out/amiboot/amiboot out/m68kdeb-amiga/amiboot
+          cp out/kernel-amiga/vmlinux-m68k-amiga out/m68kdeb-amiga/vmlinux-m68k-amiga
+          sha256sum out/m68kdeb-amiga/amiboot out/m68kdeb-amiga/vmlinux-m68k-amiga
+
+      - name: Prepare single-DH0 topology with explicit 64 MiB FastRAM
+        run: sh ci/fs-uae/prepare-m1_3a12-kernel-memory-probe.sh
+
+      - name: Boot AROS and probe Linux kernel execution boundary
+        run: |
+          mkdir -p out/m1-3a12/logs out/m1-3a12/screenshots
+          rm -f /tmp/m68kdeb-fsuae-serial /tmp/m68kdeb-capture-serial
+
+          socat -d -d \
+            pty,raw,echo=0,link=/tmp/m68kdeb-fsuae-serial \
+            pty,raw,echo=0,link=/tmp/m68kdeb-capture-serial \
+            2>out/m1-3a12/socat.log &
+          bridge=$!
+
+          for i in $(seq 1 20); do
+            [ -e /tmp/m68kdeb-fsuae-serial ] && [ -e /tmp/m68kdeb-capture-serial ] && break
+            sleep 1
+          done
+          [ -e /tmp/m68kdeb-fsuae-serial ] && [ -e /tmp/m68kdeb-capture-serial ] || exit 1
+
+          timeout 600 cat /tmp/m68kdeb-capture-serial >out/m1-3a12/serial.log &
+          serial=$!
+
+          xvfb-run -a sh -eu -c '
+            fs-uae ci/fs-uae/m1_3a12_aros_a1200_68030_64m_kernel_probe.fs-uae >out/m1-3a12/fs-uae.stdout.log 2>&1 &
+            emu=$!
+            startup=0
+            invoking=0
+            linux=0
+            for i in $(seq 1 600); do
+              [ -f out/m1-3a12/aros-root/m1-3a12-startup.marker ] && startup=1
+              [ -f out/m1-3a12/aros-root/m1-3a12-invoking-kernel.marker ] && invoking=1
+              if grep -Eq "Linux version|Booting Linux|Calibrating delay loop|Memory: .* available" out/m1-3a12/serial.log 2>/dev/null; then
+                linux=1
+                break
+              fi
+              if ! kill -0 "$emu" 2>/dev/null; then
+                echo "FS-UAE exited before Linux kernel marker" >&2
+                break
+              fi
+              sleep 1
+            done
+            scrot out/m1-3a12/screenshots/m1-3a12-kernel-probe.png || true
+            kill -INT "$emu" 2>/dev/null || true
+            sleep 2
+            kill -TERM "$emu" 2>/dev/null || true
+            wait "$emu" 2>/dev/null || true
+            printf "startup=%s\ninvoking=%s\nlinux=%s\n" "$startup" "$invoking" "$linux" > out/m1-3a12/BOUNDARIES.txt
+            if [ "$startup" -ne 1 ]; then
+              echo "M1.3a.12 FAIL boundary: AROS did not reach Startup-Sequence" >&2
+              cat out/m1-3a12/serial.log >&2 || true
+              tail -200 out/m1-3a12/fs-uae.stdout.log >&2 || true
+              exit 1
+            fi
+            if [ "$invoking" -ne 1 ]; then
+              echo "M1.3a.12 FAIL boundary: Startup reached but kernel invocation marker absent" >&2
+              exit 1
+            fi
+            if [ "$linux" -ne 1 ]; then
+              echo "M1.3a.12 FAIL boundary: 64 MiB FastRAM present, amiboot invoked kernel, but no Linux execution marker observed" >&2
+              cat out/m1-3a12/serial.log >&2 || true
+              tail -200 out/m1-3a12/fs-uae.stdout.log >&2 || true
+              exit 1
+            fi
+          '
+          rc=$?
+          kill -TERM "$serial" 2>/dev/null || true
+          kill -TERM "$bridge" 2>/dev/null || true
+          wait "$serial" 2>/dev/null || true
+          wait "$bridge" 2>/dev/null || true
+          exit "$rc"
+
+      - name: Record probe PASS
+        run: |
+          {
+            echo "result=PASS"
+            echo "git=${GITHUB_SHA}"
+            echo "workflow_run=${GITHUB_RUN_ID}"
+            echo "machine=A1200"
+            echo "cpu=68030"
+            echo "mmu=68030"
+            echo "cpu_speed=real"
+            echo "zorro_iii_memory_kib=65536"
+            echo "hard_drive_count=1"
+            echo "payload_on_dh0=amiboot+vmlinux"
+            echo "initramfs=absent"
+            echo "startup_marker=observed"
+            echo "kernel_invocation_marker=observed"
+            echo "linux_kernel_marker=observed"
+            sha256sum out/m1-3a12/aros-root/amiboot out/m1-3a12/aros-root/vmlinux-m68k-amiga
+            fs-uae --version | head -n 1 | sed 's/^/fs_uae=/'
+          } > out/m1-3a12/RESULT.txt
+
+      - name: Upload probe evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m1-3a12-aros-a1200-68030-64m-kernel-${{ github.sha }}
+          path: |
+            out/m1-3a12/RESULT.txt
+            out/m1-3a12/BOUNDARIES.txt
+            out/m1-3a12/RUNTIME_PROVENANCE.txt
+            out/m1-3a12/ORIGINAL-Startup-Sequence
+            out/m1-3a12/aros-root/S/Startup-Sequence
+            out/m1-3a12/aros-root/m1-3a12-*.marker
+            out/m1-3a12/serial.log
+            out/m1-3a12/socat.log
+            out/m1-3a12/fs-uae.stdout.log
+            out/m1-3a12/rom/
+            out/m1-3a12/screenshots/
+            out/amiboot/SHA256SUMS
+            out/kernel-amiga/linux-source.SHA256
+          if-no-files-found: warn
+          retention-days: 14
