@@ -1,0 +1,97 @@
+name: M1.3a.15 AROS A1200 68030 woody no-debug handoff
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/m1_3a15-aros-a1200-68030-woody-no-debug.yml'
+      - 'ci/fs-uae/m1_3a15_aros_a1200_68030_woody_no_debug.fs-uae'
+      - 'ci/fs-uae/prepare-m1_3a15-woody-no-debug.sh'
+      - 'platforms/amiga/fetch-amiboot.sh'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ca-certificates curl fs-uae scrot socat unzip xvfb xorriso
+          fs-uae --version
+      - name: Fetch amiboot and Debian woody kernel
+        run: |
+          sh platforms/amiga/fetch-amiboot.sh
+          mkdir -p out/m68kdeb-amiga
+          cp out/amiboot/amiboot out/m68kdeb-amiga/amiboot
+          WOODY_KERNEL_URL='https://archive.debian.org/debian/dists/woody/main/disks-m68k/current/amiga/linux.bin'
+          curl -fL --retry 3 --retry-delay 2 "$WOODY_KERNEL_URL" -o out/m68kdeb-amiga/woody-linux.bin
+          sha256sum out/m68kdeb-amiga/amiboot out/m68kdeb-amiga/woody-linux.bin
+      - name: Prepare exact no-debug control
+        run: sh ci/fs-uae/prepare-m1_3a15-woody-no-debug.sh
+      - name: Boot and classify handoff
+        run: |
+          rm -f /tmp/m68kdeb-fsuae-serial /tmp/m68kdeb-capture-serial
+          socat -d -d pty,raw,echo=0,link=/tmp/m68kdeb-fsuae-serial pty,raw,echo=0,link=/tmp/m68kdeb-capture-serial 2>out/m1-3a15/socat.log &
+          bridge=$!
+          for i in $(seq 1 20); do [ -e /tmp/m68kdeb-fsuae-serial ] && [ -e /tmp/m68kdeb-capture-serial ] && break; sleep 1; done
+          timeout 420 cat /tmp/m68kdeb-capture-serial >out/m1-3a15/serial.log & serial=$!
+          set +e
+          xvfb-run -a sh -eu -c '
+            fs-uae ci/fs-uae/m1_3a15_aros_a1200_68030_woody_no_debug.fs-uae >out/m1-3a15/fs-uae.stdout.log 2>&1 & emu=$!
+            startup=0; pre_handoff=0; returned=0; linux=0; emulator_exited=0
+            for i in $(seq 1 420); do
+              [ -f out/m1-3a15/aros-root/m1-3a15-startup.marker ] && startup=1
+              [ -f out/m1-3a15/aros-root/m1-3a15-pre-handoff.marker ] && pre_handoff=1
+              [ -f out/m1-3a15/aros-root/m1-3a15-amiboot-returned.marker ] && returned=1
+              if grep -Eiq "Linux version|Calibrating delay loop|Memory:|Kernel panic|VFS:|Unable to mount root" out/m1-3a15/serial.log 2>/dev/null; then linux=1; break; fi
+              [ "$returned" -eq 1 ] && break
+              if ! kill -0 "$emu" 2>/dev/null; then emulator_exited=1; break; fi
+              sleep 1
+            done
+            scrot out/m1-3a15/screenshots/m1-3a15.png || true
+            kill -INT "$emu" 2>/dev/null || true; sleep 2; kill -TERM "$emu" 2>/dev/null || true; wait "$emu" 2>/dev/null || true
+            printf "startup=%s\npre_handoff=%s\namiboot_returned=%s\nlinux=%s\nemulator_exited=%s\n" "$startup" "$pre_handoff" "$returned" "$linux" "$emulator_exited" >out/m1-3a15/BOUNDARIES.txt
+            if [ "$startup" -ne 1 ]; then c=AROS_STARTUP_FAILURE; rc=1
+            elif [ "$pre_handoff" -ne 1 ]; then c=PRE_HANDOFF_MARKER_FAILURE; rc=1
+            elif [ "$linux" -eq 1 ]; then c=LINUX_EXECUTION_OBSERVED_WITHOUT_AMIBOOT_DEBUG; rc=0
+            elif [ "$returned" -eq 1 ]; then c=AMIBOOT_RETURNED_WITHOUT_LINUX; rc=1
+            elif [ "$emulator_exited" -eq 1 ]; then c=EMULATOR_EXIT_DURING_HANDOFF; rc=1
+            else c=HANDOFF_STALL_PERSISTS_WITHOUT_DEBUG; rc=1; fi
+            echo "classification=$c" >out/m1-3a15/CLASSIFICATION.txt
+            exit "$rc"
+          '
+          rc=$?; set -e
+          kill -TERM "$serial" "$bridge" 2>/dev/null || true
+          wait "$serial" 2>/dev/null || true; wait "$bridge" 2>/dev/null || true
+          cat out/m1-3a15/BOUNDARIES.txt || true
+          cat out/m1-3a15/CLASSIFICATION.txt || true
+          tail -300 out/m1-3a15/serial.log || true
+          exit "$rc"
+      - name: Record PASS
+        run: |
+          { echo result=PASS; echo git=${GITHUB_SHA}; echo workflow_run=${GITHUB_RUN_ID}; cat out/m1-3a15/CLASSIFICATION.txt; cat out/m1-3a15/BOUNDARIES.txt; cat out/m1-3a15/RUNTIME_PROVENANCE.txt; } >out/m1-3a15/RESULT.txt
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m1-3a15-no-debug-${{ github.sha }}
+          path: |
+            out/m1-3a15/RESULT.txt
+            out/m1-3a15/BOUNDARIES.txt
+            out/m1-3a15/CLASSIFICATION.txt
+            out/m1-3a15/RUNTIME_PROVENANCE.txt
+            out/m1-3a15/ORIGINAL-Startup-Sequence
+            out/m1-3a15/aros-root/S/Startup-Sequence
+            out/m1-3a15/aros-root/m1-3a15-*.marker
+            out/m1-3a15/serial.log
+            out/m1-3a15/socat.log
+            out/m1-3a15/fs-uae.stdout.log
+            out/m1-3a15/rom/
+            out/m1-3a15/screenshots/
+          if-no-files-found: warn
+          retention-days: 14
