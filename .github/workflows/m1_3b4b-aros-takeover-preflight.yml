@@ -25,7 +25,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build reversible 4b loader and isolated 68030 stub with Bebbo
+      - name: Build reversible 4b loader and isolated 68030 takeover object with Bebbo
         run: |
           mkdir -p out/m1-3b4b
           docker pull amigadev/m68k-amigaos-gcc:latest
@@ -57,32 +57,37 @@ jobs:
                     out/m1-3b4b/m68kdeb-takeover-68030.o \
             | tee out/m1-3b4b/SHA256SUMS
 
-      - name: Verify reversible loader and isolated supervisor stub
+      - name: Verify reversible loader and isolated commit boundary
         run: |
-          if strings out/m1-3b4b/m68kdeb-loader | grep -q 'M68KDEB_TAKEOVER_COMMIT'; then
-            echo 'unexpected irreversible takeover marker in reversible gate' >&2
-            exit 1
-          fi
           strings out/m1-3b4b/m68kdeb-loader | grep -q 'M68KDEB_TAKEOVER_PREFLIGHT_OK'
           strings out/m1-3b4b/m68kdeb-loader | grep -q 'handoff=NOT_ATTEMPTED'
+          if strings out/m1-3b4b/m68kdeb-loader | grep -q 'm68kdeb_takeover_68030_commit'; then
+            echo 'irreversible 68030 commit path unexpectedly linked into loader' >&2
+            exit 1
+          fi
           if strings out/m1-3b4b/m68kdeb-loader | grep -q 'm68kdeb_takeover_68030_supervisor_probe'; then
-            echo 'isolated supervisor stub unexpectedly linked into loader' >&2
+            echo 'isolated supervisor probe unexpectedly linked into loader' >&2
             exit 1
           fi
           docker run --rm -v "$PWD:/work" -w /work \
             amigadev/m68k-amigaos-gcc:latest sh -lc '
+              set -eu
               NM=$(find /opt/amiga -type f -name "m68k-amigaos-nm" | head -n 1)
               OBJDUMP=$(find /opt/amiga -type f -name "m68k-amigaos-objdump" | head -n 1)
               test -x "$NM" && test -x "$OBJDUMP"
-              "$NM" out/m1-3b4b/m68kdeb-takeover-68030.o | \
-                grep -q " T m68kdeb_takeover_68030_supervisor_probe$"
+              "$NM" out/m1-3b4b/m68kdeb-takeover-68030.o > out/m1-3b4b/m68kdeb-takeover-68030.nm
+              grep -q " T m68kdeb_takeover_68030_supervisor_probe$" out/m1-3b4b/m68kdeb-takeover-68030.nm
+              grep -q " T m68kdeb_takeover_68030_commit$" out/m1-3b4b/m68kdeb-takeover-68030.nm
+              grep -q " T m68kdeb_takeover_68030_commit_boundary$" out/m1-3b4b/m68kdeb-takeover-68030.nm
               "$OBJDUMP" -dr out/m1-3b4b/m68kdeb-takeover-68030.o \
                 > out/m1-3b4b/m68kdeb-takeover-68030.disasm
-              grep -q "m68kdeb_takeover_68030_supervisor_probe" \
-                out/m1-3b4b/m68kdeb-takeover-68030.disasm
+              grep -q "m68kdeb_takeover_68030_supervisor_probe" out/m1-3b4b/m68kdeb-takeover-68030.disasm
+              grep -q "m68kdeb_takeover_68030_commit" out/m1-3b4b/m68kdeb-takeover-68030.disasm
+              grep -q "m68kdeb_takeover_68030_commit_boundary" out/m1-3b4b/m68kdeb-takeover-68030.disasm
+              grep -Eiq "ori(w|\\.w)?.*0x700.*%sr|ori.*#0x0700.*%sr" out/m1-3b4b/m68kdeb-takeover-68030.disasm
             '
 
-      - name: Upload reversible loader and isolated stub
+      - name: Upload reversible loader and isolated takeover object
         uses: actions/upload-artifact@v4
         with:
           name: m1-3b4b-reversible-loader
