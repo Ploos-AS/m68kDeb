@@ -13,7 +13,7 @@ command -v xorriso >/dev/null
 command -v sha256sum >/dev/null
 
 rm -rf "$OUT"
-mkdir -p "$OUT/download" "$OUT/aros-root" "$OUT/rom" "$OUT/logs" "$OUT/screenshots"
+mkdir -p "$OUT/download" "$OUT/aros-root" "$OUT/rom" "$OUT/m68kdeb" "$OUT/logs" "$OUT/screenshots"
 
 ZIP="$OUT/download/aros-amiga-m68k-boot-iso.zip"
 curl -fL --retry 3 --retry-delay 2 "$AROS_URL" -o "$ZIP"
@@ -42,18 +42,22 @@ for f in amiboot vmlinux-m68k-amiga initramfs-m68kdeb.gz; do
   [ -f "$BUNDLE/$f" ] || { echo "missing m68kDeb bundle file: $BUNDLE/$f" >&2; exit 1; }
 done
 
-mkdir -p "$OUT/aros-root/m68kdeb"
-cp "$BUNDLE/amiboot" "$OUT/aros-root/m68kdeb/amiboot"
-cp "$BUNDLE/vmlinux-m68k-amiga" "$OUT/aros-root/m68kdeb/vmlinux-m68k-amiga"
-cp "$BUNDLE/initramfs-m68kdeb.gz" "$OUT/aros-root/m68kdeb/initramfs-m68kdeb.gz"
+# Keep the boot directory hard drive structurally equivalent to the M1.3a.8
+# PASS topology.  The large m68kDeb payload lives on a separate directory
+# hard drive so adding it cannot perturb AROS boot-volume enumeration.
+cp "$BUNDLE/amiboot" "$OUT/m68kdeb/amiboot"
+cp "$BUNDLE/vmlinux-m68k-amiga" "$OUT/m68kdeb/vmlinux-m68k-amiga"
+cp "$BUNDLE/initramfs-m68kdeb.gz" "$OUT/m68kdeb/initramfs-m68kdeb.gz"
 cp "$OUT/aros-root/S/Startup-Sequence" "$OUT/ORIGINAL-Startup-Sequence"
+rm -f "$OUT/aros-root/m1-3a9-startup.marker"
 
 cat > "$OUT/aros-root/S/Startup-Sequence" <<'EOF'
+C:Echo "M1.3a.9 Startup-Sequence reached" >SYS:m1-3a9-startup.marker
 C:Stack 100000
-C:Echo "M1.3a.9 Startup-Sequence reached"
-C:CD SYS:m68kdeb
+C:Echo "M1.3a.9 switching to isolated m68kDeb payload volume"
+C:CD m68kDeb:
 C:Echo "M1.3a.9 invoking amiboot"
-SYS:m68kdeb/amiboot -d -k vmlinux-m68k-amiga -r initramfs-m68kdeb.gz root=/dev/ram video=pal console=ttyS0,9600n8
+m68kDeb:amiboot -d -k vmlinux-m68k-amiga -r initramfs-m68kdeb.gz root=/dev/ram video=pal console=ttyS0,9600n8
 C:Echo "M1.3a.9 amiboot returned unexpectedly"
 C:Wait 30
 EOF
@@ -72,14 +76,15 @@ EOF
   echo "kickstart_file=$OUT/rom/aros-rom.bin"
   echo "kickstart_ext_file=$OUT/rom/aros-ext.bin"
   echo "hard_drive_0=$OUT/aros-root"
-  echo "amiboot_workdir=SYS:m68kdeb"
+  echo "hard_drive_1=$OUT/m68kdeb"
+  echo "amiboot_workdir=m68kDeb:"
   echo "amiboot_kernel=vmlinux-m68k-amiga"
   echo "amiboot_initramfs=initramfs-m68kdeb.gz"
   sha256sum "$OUT/rom/aros-rom.bin" "$OUT/rom/aros-ext.bin" \
-    "$OUT/aros-root/m68kdeb/amiboot" \
-    "$OUT/aros-root/m68kdeb/vmlinux-m68k-amiga" \
-    "$OUT/aros-root/m68kdeb/initramfs-m68kdeb.gz" \
+    "$OUT/m68kdeb/amiboot" \
+    "$OUT/m68kdeb/vmlinux-m68k-amiga" \
+    "$OUT/m68kdeb/initramfs-m68kdeb.gz" \
     "$OUT/aros-root/S/Startup-Sequence" "$OUT/ORIGINAL-Startup-Sequence"
 } > "$OUT/RUNTIME_PROVENANCE.txt"
 
-echo "PASS: prepared M1.3a.9 AROS runtime with ROM pair isolated from writable DH0"
+echo "PASS: prepared M1.3a.9 AROS runtime with isolated ROM pair and payload DH1"
