@@ -1,0 +1,21 @@
+[fs-uae]
+amiga_model = A1200
+cpu = 68030
+kickstart_file = out/m1-3a10/rom/aros-rom.bin
+kickstart_ext_file = out/m1-3a10/rom/aros-ext.bin
+uae_cpu_speed = real
+hard_drive_0 = out/m1-3a10/aros-root
+hard_drive_0_label = System
+hard_drive_0_read_only = 0
+serial_port = /tmp/m68kdeb-fsuae-serial
+fullscreen = 0
+window_width = 752
+window_height = 576
+logs_dir = out/m1-3a10/logs
+screenshots_dir = out/m1-3a10/screenshots
+
+# M1.3a.10 deliberately preserves the known-good M1.3a.8 topology:
+# one writable AROS directory hard drive only, with the matching 2026-09-08
+# AROS ROM pair isolated outside DH0.  The only added payload is amiboot itself
+# inside DH0; no Linux kernel, initramfs, second hard drive, accelerator ROM,
+# or proprietary Kickstart is present.
