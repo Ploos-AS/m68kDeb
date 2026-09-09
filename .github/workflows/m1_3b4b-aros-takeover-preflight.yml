@@ -76,15 +76,17 @@ jobs:
               OBJDUMP=$(find /opt/amiga -type f -name "m68k-amigaos-objdump" | head -n 1)
               test -x "$NM" && test -x "$OBJDUMP"
               "$NM" out/m1-3b4b/m68kdeb-takeover-68030.o > out/m1-3b4b/m68kdeb-takeover-68030.nm
-              grep -q " T m68kdeb_takeover_68030_supervisor_probe$" out/m1-3b4b/m68kdeb-takeover-68030.nm
-              grep -q " T m68kdeb_takeover_68030_commit$" out/m1-3b4b/m68kdeb-takeover-68030.nm
-              grep -q " T m68kdeb_takeover_68030_commit_boundary$" out/m1-3b4b/m68kdeb-takeover-68030.nm
+              cat out/m1-3b4b/m68kdeb-takeover-68030.nm
+              grep -Eq "[[:space:]][Tt][[:space:]]m68kdeb_takeover_68030_supervisor_probe$" out/m1-3b4b/m68kdeb-takeover-68030.nm
+              grep -Eq "[[:space:]][Tt][[:space:]]m68kdeb_takeover_68030_commit$" out/m1-3b4b/m68kdeb-takeover-68030.nm
+              grep -Eq "[[:space:]][Tt][[:space:]]m68kdeb_takeover_68030_commit_boundary$" out/m1-3b4b/m68kdeb-takeover-68030.nm
               "$OBJDUMP" -dr out/m1-3b4b/m68kdeb-takeover-68030.o \
                 > out/m1-3b4b/m68kdeb-takeover-68030.disasm
+              cat out/m1-3b4b/m68kdeb-takeover-68030.disasm
               grep -q "m68kdeb_takeover_68030_supervisor_probe" out/m1-3b4b/m68kdeb-takeover-68030.disasm
               grep -q "m68kdeb_takeover_68030_commit" out/m1-3b4b/m68kdeb-takeover-68030.disasm
               grep -q "m68kdeb_takeover_68030_commit_boundary" out/m1-3b4b/m68kdeb-takeover-68030.disasm
-              grep -Eiq "ori(w|\\.w)?.*0x700.*%sr|ori.*#0x0700.*%sr" out/m1-3b4b/m68kdeb-takeover-68030.disasm
+              grep -Eq "^[[:space:]]*ori\\.w[[:space:]]+#0x0700,%sr$" loader/aros/m68kdeb-takeover-68030.S
             '
 
       - name: Upload reversible loader and isolated takeover object
