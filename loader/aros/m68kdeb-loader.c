@@ -155,10 +155,11 @@ static int validate_bootinfo(const UBYTE *b, ULONG used)
 }
 
 /*
- * vmlinux is an ELF32 big-endian m68k executable.  The Linux bootinfo ABI
- * says struct bootversion is at the start of kernel code, not at file offset
- * zero.  Resolve the ELF entry virtual address through the containing PT_LOAD
- * segment so the probe reads the actual first kernel instructions.
+ * vmlinux is an ELF32 big-endian m68k executable.  Linux links ENTRY(_start),
+ * while the bootinfo version table starts earlier at _stext in the same
+ * loadable text segment.  Resolve the entry through PT_LOAD for a sanity
+ * check, then search only the file-backed bytes preceding _start in that
+ * segment for BOOTINFOV_MAGIC and validate the machine/version pairs.
  */
 static int kernel_entry_file_offset(const UBYTE *kernel, ULONG size,
                                     ULONG *entry, ULONG *entry_offset)
@@ -207,7 +208,9 @@ static int kernel_entry_file_offset(const UBYTE *kernel, ULONG size,
         delta = *entry - vaddr;
         if (delta >= filesz)
             continue;
-        if (file_off > size || delta > size - file_off)
+        if (file_off > size || filesz > size - file_off)
+            return 0;
+        if (delta > filesz)
             return 0;
         *entry_offset = file_off + delta;
         if (*entry_offset >= size)
@@ -223,31 +226,69 @@ static int kernel_supports_amiga_bootinfo(const UBYTE *kernel, ULONG size,
                                           ULONG *magic_offset,
                                           ULONG *advertised_version)
 {
-    ULONG p;
-    ULONG pairs = 0;
+    ULONG phoff;
+    UWORD phentsize;
+    UWORD phnum;
+    UWORD i;
 
     if (!kernel_entry_file_offset(kernel, size, entry, entry_offset))
         return 0;
 
-    /* Packed struct bootversion: 16-bit branch, then 32-bit magic. */
-    if (*entry_offset > size - 6UL)
-        return 0;
-    *magic_offset = *entry_offset + 2UL;
-    if (load_be32(kernel + *magic_offset) != BOOTINFOV_MAGIC)
-        return 0;
+    phoff = load_be32(kernel + 28);
+    phentsize = load_be16(kernel + 42);
+    phnum = load_be16(kernel + 44);
 
-    p = *magic_offset + 4UL;
-    while (p <= size - 8UL && pairs < 32UL) {
-        ULONG mach = load_be32(kernel + p);
-        ULONG ver = load_be32(kernel + p + 4UL);
-        if (mach == 0UL)
-            break;
-        if (mach == MACH_AMIGA) {
-            *advertised_version = ver;
-            return ver == AMIGA_BOOTI_VERSION;
+    for (i = 0; i < phnum; i++) {
+        ULONG p = phoff + (ULONG)i * (ULONG)phentsize;
+        ULONG file_off;
+        ULONG vaddr;
+        ULONG filesz;
+        ULONG delta;
+        ULONG scan;
+        ULONG scan_end;
+
+        if (load_be32(kernel + p) != PT_LOAD)
+            continue;
+
+        file_off = load_be32(kernel + p + 4);
+        vaddr = load_be32(kernel + p + 8);
+        filesz = load_be32(kernel + p + 16);
+        if (*entry < vaddr)
+            continue;
+        delta = *entry - vaddr;
+        if (delta >= filesz)
+            continue;
+        if (file_off > size || filesz > size - file_off)
+            return 0;
+
+        scan_end = file_off + delta;
+        if (scan_end > size)
+            return 0;
+
+        for (scan = file_off; scan + 12UL <= scan_end; scan += 2UL) {
+            ULONG q;
+            ULONG pairs;
+
+            if (load_be32(kernel + scan) != BOOTINFOV_MAGIC)
+                continue;
+
+            q = scan + 4UL;
+            pairs = 0;
+            while (q <= size - 8UL && pairs < 32UL) {
+                ULONG mach = load_be32(kernel + q);
+                ULONG ver = load_be32(kernel + q + 4UL);
+                if (mach == 0UL)
+                    break;
+                if (mach == MACH_AMIGA) {
+                    *magic_offset = scan;
+                    *advertised_version = ver;
+                    return ver == AMIGA_BOOTI_VERSION;
+                }
+                q += 8UL;
+                pairs++;
+            }
         }
-        p += 8UL;
-        pairs++;
+        return 0;
     }
     return 0;
 }
