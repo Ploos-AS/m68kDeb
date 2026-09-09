@@ -25,6 +25,12 @@ static ULONG load_be32(const UBYTE *p)
            ((ULONG)p[2] << 8) | (ULONG)p[3];
 }
 
+static void zero_bytes(UBYTE *p, ULONG bytes)
+{
+    while (bytes--)
+        *p++ = 0;
+}
+
 int m68kdeb_layout_inspect_elf(const UBYTE *kernel, ULONG size,
                                struct m68kdeb_elf_layout *l)
 {
@@ -105,7 +111,7 @@ int m68kdeb_layout_materialize_elf(const UBYTE *kernel, ULONG kernel_size,
             off > kernel_size || filesz > kernel_size - off)
             return 0;
         if (memsz)
-            SetMem(base + dest_off, 0, memsz);
+            zero_bytes(base + dest_off, memsz);
         if (filesz)
             CopyMem((APTR)(kernel + off), (APTR)(base + dest_off), filesz);
     }
