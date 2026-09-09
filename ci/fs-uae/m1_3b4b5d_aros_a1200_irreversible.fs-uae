@@ -1,0 +1,20 @@
+[fs-uae]
+amiga_model = A1200
+cpu = 68030
+kickstart_file = out/m1-3b4b5d/rom/aros-rom.bin
+kickstart_ext_file = out/m1-3b4b5d/rom/aros-ext.bin
+uae_cpu_speed = real
+zorro_iii_memory = 65536
+hard_drive_0 = out/m1-3b4b5d/aros-root
+hard_drive_0_label = System
+hard_drive_0_read_only = 0
+fullscreen = 0
+window_width = 752
+window_height = 576
+logs_dir = out/m1-3b4b5d/logs
+screenshots_dir = out/m1-3b4b5d/screenshots
+
+# M1.3b.4b.5d is deliberately irreversible and opt-in.
+# The harness enters supervisor state, masks interrupts, disables 68030
+# cache/MMU state and then remains in the qualified non-returning loop.
+# No Linux entry transfer is implemented in this milestone.
