@@ -41,12 +41,14 @@ done
 
 cp "$OUT/aros-root/S/Startup-Sequence" "$OUT/ORIGINAL-Startup-Sequence"
 cp "$BUNDLE/amiboot" "$OUT/aros-root/amiboot"
-rm -f "$OUT/aros-root/m1-3a10-startup.marker" "$OUT/aros-root/m1-3a10-after-amiboot.marker"
+rm -f "$OUT/aros-root/m1-3a10-startup.marker" \
+  "$OUT/aros-root/m1-3a10-invoking-amiboot.marker" \
+  "$OUT/aros-root/m1-3a10-after-amiboot.marker"
 
 cat > "$OUT/aros-root/S/Startup-Sequence" <<'EOF'
 C:Echo "M1.3a.10 Startup-Sequence reached" >SYS:m1-3a10-startup.marker
 C:Stack 100000
-C:Echo "M1.3a.10 invoking minimal amiboot probe"
+C:Echo "M1.3a.10 invoking minimal amiboot probe" >SYS:m1-3a10-invoking-amiboot.marker
 SYS:amiboot
 C:Echo "M1.3a.10 amiboot returned" >SYS:m1-3a10-after-amiboot.marker
 C:Wait 300
@@ -68,7 +70,7 @@ EOF
   echo "payload=amiboot only on DH0"
   echo "linux_kernel=absent"
   echo "initramfs=absent"
-  echo "probe=Startup marker then amiboot executable invocation without Linux payload"
+  echo "probe=Startup marker, invocation marker, then amiboot without Linux payload"
   sha256sum "$OUT/rom/aros-rom.bin" "$OUT/rom/aros-ext.bin" \
     "$OUT/aros-root/amiboot" "$OUT/aros-root/S/Startup-Sequence" \
     "$OUT/ORIGINAL-Startup-Sequence"
