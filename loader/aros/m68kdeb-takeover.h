@@ -27,15 +27,16 @@ struct m68kdeb_takeover_request {
 };
 
 /*
- * Reversible M1.3b.4b.1 boundary check.  This function must complete before
- * any supervisor takeover, interrupt masking, cache/MMU manipulation or jump.
+ * Reversible boundary check.  This function must complete before any
+ * supervisor takeover, interrupt masking, cache/MMU manipulation or jump.
  */
 int m68kdeb_takeover_68030_prepare(const struct m68kdeb_takeover_request *req);
 
 /*
- * Intentionally not implemented in M1.3b.4b.1.
- * M1.3b.4b.2 must provide the non-returning 68030 assembly implementation
- * only after the final-layout object is shared with the real loader path.
+ * M1.3b.4b.4 first irreversible boundary.  The implementation lives in the
+ * isolated 68030 assembly object and is deliberately not linked into the real
+ * loader yet.  Once called in supervisor mode it masks interrupts and does not
+ * return.  DMA/cache/MMU handling and the Linux entry jump are still absent.
  */
 void m68kdeb_takeover_68030_commit(const struct m68kdeb_takeover_request *req);
 
