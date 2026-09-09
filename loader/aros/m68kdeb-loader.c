@@ -46,6 +46,17 @@ static const char version[] = "$VER: m68kdeb-loader 0.2 (09.09.2026)";
 #define BOOTINFO_CAPACITY     4096UL
 #define DEFAULT_AMIGA_MODEL   5UL /* AMI_1200 for the M1.3b CI profile */
 
+#define EI_CLASS              4
+#define EI_DATA               5
+#define EI_VERSION            6
+#define ELFCLASS32            1
+#define ELFDATA2MSB           2
+#define EV_CURRENT            1
+#define EM_68K                4
+#define PT_LOAD               1UL
+#define ELF32_EHDR_SIZE       52UL
+#define ELF32_PHDR_SIZE       32UL
+
 struct bootinfo_builder {
     UBYTE *base;
     ULONG used;
@@ -143,32 +154,100 @@ static int validate_bootinfo(const UBYTE *b, ULONG used)
     return saw_last && off == used;
 }
 
+/*
+ * vmlinux is an ELF32 big-endian m68k executable.  The Linux bootinfo ABI
+ * says struct bootversion is at the start of kernel code, not at file offset
+ * zero.  Resolve the ELF entry virtual address through the containing PT_LOAD
+ * segment so the probe reads the actual first kernel instructions.
+ */
+static int kernel_entry_file_offset(const UBYTE *kernel, ULONG size,
+                                    ULONG *entry, ULONG *entry_offset)
+{
+    ULONG phoff;
+    UWORD phentsize;
+    UWORD phnum;
+    UWORD i;
+
+    if (size < ELF32_EHDR_SIZE)
+        return 0;
+    if (kernel[0] != 0x7f || kernel[1] != 'E' ||
+        kernel[2] != 'L' || kernel[3] != 'F')
+        return 0;
+    if (kernel[EI_CLASS] != ELFCLASS32 ||
+        kernel[EI_DATA] != ELFDATA2MSB ||
+        kernel[EI_VERSION] != EV_CURRENT)
+        return 0;
+    if (load_be16(kernel + 18) != EM_68K)
+        return 0;
+
+    *entry = load_be32(kernel + 24);
+    phoff = load_be32(kernel + 28);
+    phentsize = load_be16(kernel + 42);
+    phnum = load_be16(kernel + 44);
+
+    if (phentsize < ELF32_PHDR_SIZE || phnum == 0)
+        return 0;
+    if (phoff > size || (ULONG)phnum > (size - phoff) / (ULONG)phentsize)
+        return 0;
+
+    for (i = 0; i < phnum; i++) {
+        ULONG p = phoff + (ULONG)i * (ULONG)phentsize;
+        ULONG file_off;
+        ULONG vaddr;
+        ULONG filesz;
+        ULONG delta;
+
+        if (load_be32(kernel + p) != PT_LOAD)
+            continue;
+        file_off = load_be32(kernel + p + 4);
+        vaddr = load_be32(kernel + p + 8);
+        filesz = load_be32(kernel + p + 16);
+        if (*entry < vaddr)
+            continue;
+        delta = *entry - vaddr;
+        if (delta >= filesz)
+            continue;
+        if (file_off > size || delta > size - file_off)
+            return 0;
+        *entry_offset = file_off + delta;
+        if (*entry_offset >= size)
+            return 0;
+        return 1;
+    }
+    return 0;
+}
+
 static int kernel_supports_amiga_bootinfo(const UBYTE *kernel, ULONG size,
+                                          ULONG *entry,
+                                          ULONG *entry_offset,
                                           ULONG *magic_offset,
                                           ULONG *advertised_version)
 {
-    ULONG i;
-    ULONG limit = size < 1024UL ? size : 1024UL;
+    ULONG p;
+    ULONG pairs = 0;
 
-    for (i = 0; i + 12UL <= limit; i += 2UL) {
-        if (load_be32(kernel + i) == BOOTINFOV_MAGIC) {
-            ULONG p = i + 4UL;
-            ULONG pairs = 0;
-            *magic_offset = i;
-            while (p + 8UL <= limit && pairs < 32UL) {
-                ULONG mach = load_be32(kernel + p);
-                ULONG ver = load_be32(kernel + p + 4UL);
-                if (mach == 0UL)
-                    break;
-                if (mach == MACH_AMIGA) {
-                    *advertised_version = ver;
-                    return ver == AMIGA_BOOTI_VERSION;
-                }
-                p += 8UL;
-                pairs++;
-            }
-            return 0;
+    if (!kernel_entry_file_offset(kernel, size, entry, entry_offset))
+        return 0;
+
+    /* Packed struct bootversion: 16-bit branch, then 32-bit magic. */
+    if (*entry_offset > size - 6UL)
+        return 0;
+    *magic_offset = *entry_offset + 2UL;
+    if (load_be32(kernel + *magic_offset) != BOOTINFOV_MAGIC)
+        return 0;
+
+    p = *magic_offset + 4UL;
+    while (p <= size - 8UL && pairs < 32UL) {
+        ULONG mach = load_be32(kernel + p);
+        ULONG ver = load_be32(kernel + p + 4UL);
+        if (mach == 0UL)
+            break;
+        if (mach == MACH_AMIGA) {
+            *advertised_version = ver;
+            return ver == AMIGA_BOOTI_VERSION;
         }
+        p += 8UL;
+        pairs++;
     }
     return 0;
 }
@@ -251,6 +330,8 @@ static int load_and_build(struct ExecBase *SysBase, const char *path, ULONG mode
     UBYTE *bootinfo = NULL;
     struct bootinfo_builder bb;
     struct MemHeader *mh;
+    ULONG kernel_entry = 0;
+    ULONG kernel_entry_offset = 0;
     ULONG magic_offset = 0;
     ULONG advertised_version = 0;
     ULONG cpu, mmu, fpu;
@@ -292,12 +373,17 @@ static int load_and_build(struct ExecBase *SysBase, const char *path, ULONG mode
            path, (ULONG)kernel, (ULONG)size_long);
 
     if (!kernel_supports_amiga_bootinfo(kernel, (ULONG)size_long,
+                                        &kernel_entry, &kernel_entry_offset,
                                         &magic_offset, &advertised_version)) {
-        Printf("M68KDEB_LOADER_ERROR bootinfo_abi magic_offset=%lu advertised=0x%08lx expected=0x%08lx\n",
-               magic_offset, advertised_version, AMIGA_BOOTI_VERSION);
+        Printf("M68KDEB_LOADER_ERROR bootinfo_abi entry=0x%08lx entry_file_offset=%lu magic_offset=%lu advertised=0x%08lx expected=0x%08lx\n",
+               kernel_entry, kernel_entry_offset, magic_offset,
+               advertised_version, AMIGA_BOOTI_VERSION);
         goto out;
     }
 
+    Printf("kernel_format=ELF32-BE-m68k\n");
+    Printf("kernel_entry=0x%08lx\n", kernel_entry);
+    Printf("kernel_entry_file_offset=%lu\n", kernel_entry_offset);
     Printf("kernel_bootinfo_magic_offset=%lu\n", magic_offset);
     Printf("kernel_amiga_bootinfo_version=0x%08lx\n", advertised_version);
 
