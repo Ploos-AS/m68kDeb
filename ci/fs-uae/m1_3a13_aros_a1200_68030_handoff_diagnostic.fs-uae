@@ -1,0 +1,22 @@
+[fs-uae]
+amiga_model = A1200
+cpu = 68030
+kickstart_file = out/m1-3a13/rom/aros-rom.bin
+kickstart_ext_file = out/m1-3a13/rom/aros-ext.bin
+uae_cpu_speed = real
+zorro_iii_memory = 65536
+hard_drive_0 = out/m1-3a13/aros-root
+hard_drive_0_label = System
+hard_drive_0_read_only = 0
+serial_port = /tmp/m68kdeb-fsuae-serial
+fullscreen = 0
+window_width = 752
+window_height = 576
+logs_dir = out/m1-3a13/logs
+screenshots_dir = out/m1-3a13/screenshots
+
+# M1.3a.13 preserves the M1.3a.12 single-DH0, matching-AROS-ROM,
+# generic A1200/68030+MMU and 64 MiB FastRAM topology. The only purpose of
+# this probe is to improve observability around the amiboot -> Linux kernel
+# handoff. No initramfs, second hard drive, accelerator ROM, or proprietary
+# ROM is present.
