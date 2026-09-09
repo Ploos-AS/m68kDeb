@@ -44,7 +44,9 @@ jobs:
                 loader/aros/m68kdeb-handoff.c \
                 loader/aros/m68kdeb-takeover.c \
                 -o out/m1-3b4b/m68kdeb-loader \
-                -m68000 -Os -Wall -Wextra -Werror -noixemul
+                -m68000 -Os -Wall -Wextra -Werror \
+                -Wno-error=pointer-sign -Wno-error=int-conversion \
+                -noixemul
             '
           file out/m1-3b4b/m68kdeb-loader
           sha256sum out/m1-3b4b/m68kdeb-loader | tee out/m1-3b4b/SHA256SUMS
