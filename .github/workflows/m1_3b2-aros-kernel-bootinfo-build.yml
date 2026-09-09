@@ -6,6 +6,7 @@ on:
     paths:
       - 'loader/aros/m68kdeb-loader.c'
       - 'kernel/build-amiga.sh'
+      - 'ci/fs-uae/fetch-aros-m68k-nightly.sh'
       - 'ci/fs-uae/m1_3b2_aros_a1200_bootinfo_build.fs-uae'
       - 'ci/fs-uae/prepare-m1_3b2-bootinfo-build.sh'
       - '.github/workflows/m1_3b2-aros-kernel-bootinfo-build.yml'
@@ -137,6 +138,9 @@ jobs:
             out/m1-3b2/CLASSIFICATION.txt
             out/m1-3b2/RUNTIME_PROVENANCE.txt
             out/m1-3b2/ORIGINAL-Startup-Sequence
+            out/m1-3b2/aros-fetch/SOURCE_URL
+            out/m1-3b2/aros-fetch/SHA256SUMS
+            out/m1-3b2/aros-fetch/ISO_SHA256
             out/m1-3b2/aros-root/S/Startup-Sequence
             out/m1-3b2/aros-root/m1-3b2-*.marker
             out/m1-3b2/aros-root/m68kdeb-bootinfo-report.txt
