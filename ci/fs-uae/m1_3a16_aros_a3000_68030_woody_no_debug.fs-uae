@@ -1,0 +1,21 @@
+[fs-uae]
+amiga_model = A3000
+cpu = 68030
+kickstart_file = out/m1-3a16/rom/aros-rom.bin
+kickstart_ext_file = out/m1-3a16/rom/aros-ext.bin
+uae_cpu_speed = real
+motherboard_ram = 16384
+hard_drive_0 = out/m1-3a16/aros-root
+hard_drive_0_label = System
+hard_drive_0_read_only = 0
+serial_port = /tmp/m68kdeb-fsuae-serial
+fullscreen = 0
+window_width = 752
+window_height = 576
+logs_dir = out/m1-3a16/logs
+screenshots_dir = out/m1-3a16/screenshots
+
+# M1.3a.16 replaces the generic A1200+Zorro III topology with an A3000,
+# while keeping 68030+MMU, real CPU speed, matching AROS nightly ROM/system,
+# amiboot 5.6 without -d, and the Debian woody Amiga kernel control.
+# This discriminates A1200/Z3 topology issues from an AROS/amiboot takeover issue.
