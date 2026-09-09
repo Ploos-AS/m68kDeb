@@ -1,0 +1,20 @@
+[fs-uae]
+amiga_model = A1200
+cpu = 68030
+kickstart_file = out/m1-3b2/rom/aros-rom.bin
+kickstart_ext_file = out/m1-3b2/rom/aros-ext.bin
+uae_cpu_speed = real
+zorro_iii_memory = 65536
+hard_drive_0 = out/m1-3b2/aros-root
+hard_drive_0_label = System
+hard_drive_0_read_only = 0
+fullscreen = 0
+window_width = 752
+window_height = 576
+logs_dir = out/m1-3b2/logs
+screenshots_dir = out/m1-3b2/screenshots
+
+# M1.3b.2 uses the qualified matching-AROS A1200/68030+MMU topology.
+# The native m68kDeb loader loads the uncompressed Linux 7.2 kernel and
+# constructs/self-validates Linux/m68k bootinfo records, but does not perform
+# privileged takeover and does not jump to the kernel.
