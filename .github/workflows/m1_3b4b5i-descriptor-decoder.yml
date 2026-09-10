@@ -1,0 +1,64 @@
+name: M1.3b.4b.5i descriptor decoder
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'loader/aros/m68kdeb-68030-descriptor.c'
+      - 'loader/aros/m68kdeb-68030-descriptor.h'
+      - 'tests/test_68030_descriptor.c'
+      - 'docs/M1_3B4B5I_DESCRIPTOR_DECODER.md'
+      - '.github/workflows/m1_3b4b5i-descriptor-decoder.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build and run host decoder tests
+        run: |
+          mkdir -p out/m1-3b4b5i
+          cc -std=c99 -O2 -Wall -Wextra -Werror \
+            tests/test_68030_descriptor.c loader/aros/m68kdeb-68030-descriptor.c \
+            -o out/m1-3b4b5i/test-68030-descriptor
+          out/m1-3b4b5i/test-68030-descriptor | tee out/m1-3b4b5i/RESULT.txt
+          grep -q 'M68KDEB_68030_DESCRIPTOR_TEST_PASS' out/m1-3b4b5i/RESULT.txt
+
+      - name: Build decoder for m68k Amiga target
+        run: |
+          docker pull amigadev/m68k-amigaos-gcc:latest
+          docker run --rm -v "$PWD:/work" -w /work \
+            amigadev/m68k-amigaos-gcc:latest sh -lc '
+              set -eu
+              CC=$(find / -type f -name "m68k-amigaos-gcc" 2>/dev/null | head -n 1)
+              test -x "$CC"
+              "$CC" -c loader/aros/m68kdeb-68030-descriptor.c \
+                -o out/m1-3b4b5i/m68kdeb-68030-descriptor.o \
+                -m68000 -Os -Wall -Wextra -Werror -noixemul
+            '
+          file out/m1-3b4b5i/m68kdeb-68030-descriptor.o | tee out/m1-3b4b5i/FILE.txt
+          sha256sum out/m1-3b4b5i/m68kdeb-68030-descriptor.o | tee out/m1-3b4b5i/SHA256SUMS
+
+      - name: Enforce reversible decoder boundary
+        run: |
+          ! grep -R -n -E 'ptest|pmove|pflusha?|SuperState|m68kdeb_takeover_68030_commit' \
+            loader/aros/m68kdeb-68030-descriptor.c loader/aros/m68kdeb-68030-descriptor.h
+          grep -q 'does not perform a physical table walk' docs/M1_3B4B5I_DESCRIPTOR_DECODER.md
+          printf '%s\n' \
+            'milestone=M1.3b.4b.5i' \
+            'decoder=terminal-page-only' \
+            'runtime_execution=NOT_ATTEMPTED' \
+            'mmu_mutation=FORBIDDEN' \
+            'result=PASS' | tee out/m1-3b4b5i/CLASSIFICATION.txt
+
+      - name: Upload evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: m1-3b4b5i-descriptor-decoder-${{ github.sha }}
+          path: out/m1-3b4b5i/
+          retention-days: 14
