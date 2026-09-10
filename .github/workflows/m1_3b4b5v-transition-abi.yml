@@ -84,7 +84,8 @@ jobs:
               f"blob_bytes={len(data)}\nabi_probe_offset={syms['abi']}\n"
               f"reversible_probe_offset={syms['rev']}\nend_offset={syms['end']}\n")
           PY
-          awk '/<m68kdeb_takeover_68030_trampoline_abi_probe>:/,/^$/' out/m1-3b4b5v/trampoline.disasm.txt > out/m1-3b4b5v/abi-probe.disasm.txt
+          awk '/m68kdeb_takeover_68030_trampoline_abi_probe:$/,/^$/' out/m1-3b4b5v/trampoline.disasm.txt > out/m1-3b4b5v/abi-probe.disasm.txt
+          grep -q 'm68kdeb_takeover_68030_trampoline_abi_probe:' out/m1-3b4b5v/abi-probe.disasm.txt
           ! grep -Eiq 'movec|pmove|pflusha|ori.*sr|jmp|bra|bsr' out/m1-3b4b5v/abi-probe.disasm.txt
           grep -Eiq 'rts' out/m1-3b4b5v/abi-probe.disasm.txt
           sha256sum out/m1-3b4b5v/trampoline.bin > out/m1-3b4b5v/TRAMPOLINE_SHA256SUMS
