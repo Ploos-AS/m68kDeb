@@ -53,7 +53,8 @@ jobs:
           ! grep -R -n -E 'pmove|ptest|pflusha?|SuperState|m68kdeb_takeover_68030_commit' \
             loader/aros/m68kdeb-68030-evidence.c loader/aros/m68kdeb-68030-evidence.h
           grep -q 'does not itself read physical memory' docs/M1_3B4B5J_TRANSLATION_EVIDENCE.md
-          grep -q 'does not prove an identity mapping' docs/M1_3B4B5J_TRANSLATION_EVIDENCE.md
+          tr '\n' ' ' < docs/M1_3B4B5J_TRANSLATION_EVIDENCE.md | \
+            grep -Eq 'does[[:space:]]+not[[:space:]]+prove[[:space:]]+an[[:space:]]+identity[[:space:]]+mapping'
           printf '%s\n' \
             'milestone=M1.3b.4b.5j' \
             'composition=PTEST-status+terminal-descriptor' \
