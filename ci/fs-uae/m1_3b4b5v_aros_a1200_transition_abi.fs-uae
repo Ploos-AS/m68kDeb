@@ -1,0 +1,17 @@
+[fs-uae]
+amiga_model = A1200
+cpu = 68030
+kickstart_file = out/m1-3b4b5v/rom/aros-rom.bin
+kickstart_ext_file = out/m1-3b4b5v/rom/aros-ext.bin
+uae_cpu_speed = real
+zorro_iii_memory = 65536
+hard_drive_0 = out/m1-3b4b5v/aros-root
+hard_drive_0_label = System
+hard_drive_0_read_only = 0
+fullscreen = 0
+window_width = 752
+window_height = 576
+logs_dir = out/m1-3b4b5v/logs
+screenshots_dir = out/m1-3b4b5v/screenshots
+
+# Reversible transition ABI probe only; real transition entry is forbidden.
