@@ -28,8 +28,12 @@ int main(void)
     unsigned char raw[4];
     int rc;
 
+    /* Runtime evidence must survive a trap/hang at a privileged boundary. */
+    setvbuf(stdout, NULL, _IONBF, 0);
+
     printf("M68KDEB_5N_START\n");
     printf("target_logical=0x%08lx\n", (unsigned long)(uintptr_t)&probe_word);
+    printf("M68KDEB_5N_BEFORE_SUPERSTATE_TARGET\n");
 
     oldsp = SuperState();
     if (!oldsp) {
@@ -37,10 +41,14 @@ int main(void)
         return 10;
     }
 
+    printf("M68KDEB_5N_BEFORE_TARGET_PTEST\n");
     rc = m68kdeb_translate_68030_ptest((unsigned long)(uintptr_t)&probe_word,
                                        &target_psr,
                                        &target_desc_phys);
+    printf("M68KDEB_5N_AFTER_TARGET_PTEST\n");
     UserState(oldsp);
+    printf("M68KDEB_5N_AFTER_USERSTATE_TARGET\n");
+
     if (rc != 0 || target_desc_phys == 0) {
         printf("M68KDEB_5N_TARGET_PTEST_FAIL rc=%ld desc=0x%08lx\n",
                (long)rc, target_desc_phys);
@@ -55,16 +63,21 @@ int main(void)
      * logically readable. Re-probe that physical value as a logical address
      * and require a transparent-translation identity result before reading.
      */
+    printf("M68KDEB_5N_BEFORE_SUPERSTATE_DESCRIPTOR\n");
     oldsp = SuperState();
     if (!oldsp) {
         printf("M68KDEB_5N_SUPERSTATE_FAIL_SECOND\n");
         return 12;
     }
 
+    printf("M68KDEB_5N_BEFORE_DESCRIPTOR_PTEST\n");
     rc = m68kdeb_translate_68030_ptest(target_desc_phys,
                                        &desc_psr,
                                        &desc_desc_phys);
+    printf("M68KDEB_5N_AFTER_DESCRIPTOR_PTEST\n");
     UserState(oldsp);
+    printf("M68KDEB_5N_AFTER_USERSTATE_DESCRIPTOR\n");
+
     if (rc != 0) {
         printf("M68KDEB_5N_DESCRIPTOR_PTEST_FAIL rc=%ld\n", (long)rc);
         return 13;
@@ -84,6 +97,7 @@ int main(void)
     }
 
     printf("M68KDEB_5N_TT_ADMITTED\n");
+    printf("M68KDEB_5N_BEFORE_BOUNDED_READ\n");
 
     rc = m68kdeb_68030_tt_bounded_read(&proof,
                                        (uint32_t)target_desc_phys,
