@@ -1,0 +1,65 @@
+#!/bin/sh
+set -eu
+
+LOADER=${LOADER:-out/m1-3b4b5w/m68kdeb-loader}
+KERNEL=${KERNEL:-out/kernel-amiga/vmlinux-m68k-amiga}
+INITRAMFS=${INITRAMFS:-out/initramfs-amiga/initramfs-m68kdeb.gz}
+OUT=${OUT:-out/m1-3b4b5w}
+
+for c in curl unzip xorriso sha256sum; do command -v "$c" >/dev/null; done
+[ -f "$LOADER" ] || { echo "missing loader: $LOADER" >&2; exit 1; }
+[ -f "$KERNEL" ] || { echo "missing kernel: $KERNEL" >&2; exit 1; }
+[ -f "$INITRAMFS" ] || { echo "missing initramfs: $INITRAMFS" >&2; exit 1; }
+
+rm -rf "$OUT/aros-root" "$OUT/rom" "$OUT/download" "$OUT/aros-fetch" "$OUT/logs" "$OUT/screenshots"
+mkdir -p "$OUT/download" "$OUT/aros-root" "$OUT/rom" "$OUT/logs" "$OUT/screenshots"
+
+FETCH_OUT="$OUT/aros-fetch"
+OUT="$FETCH_OUT" sh ci/fs-uae/fetch-aros-m68k-nightly.sh
+AROS_URL=$(cat "$FETCH_OUT/SOURCE_URL")
+ISO=$(cat "$FETCH_OUT/ISO_PATH")
+[ -f "$ISO" ] || { echo "resolved AROS ISO missing: $ISO" >&2; exit 1; }
+
+xorriso -osirrox on -indev "$ISO" -extract / "$OUT/aros-root" >/dev/null 2>&1
+chmod -R u+rwX "$OUT/aros-root"
+ROM=$(find "$OUT/aros-root" -type f -name 'aros-rom.bin' | head -n 1 || true)
+EXT=$(find "$OUT/aros-root" -type f -name 'aros-ext.bin' | head -n 1 || true)
+[ -n "$ROM" ] && [ -n "$EXT" ] || { echo 'matching AROS ROM pair missing' >&2; exit 1; }
+cp "$ROM" "$OUT/rom/aros-rom.bin"
+cp "$EXT" "$OUT/rom/aros-ext.bin"
+
+for f in S/Startup-Sequence C/Echo C/Wait; do
+  [ -e "$OUT/aros-root/$f" ] || { echo "missing AROS runtime file: $f" >&2; exit 1; }
+done
+
+cp "$OUT/aros-root/S/Startup-Sequence" "$OUT/ORIGINAL-Startup-Sequence"
+cp "$LOADER" "$OUT/aros-root/m68kdeb-loader"
+cp "$KERNEL" "$OUT/aros-root/vmlinux-m68k-amiga"
+cp "$INITRAMFS" "$OUT/aros-root/initramfs-m68kdeb.gz"
+rm -f "$OUT/aros-root/m1-3b4b5w-"*.marker "$OUT/aros-root/m68kdeb-5w-report.txt"
+
+cat > "$OUT/aros-root/S/Startup-Sequence" <<'EOF'
+C:Echo "M1.3b.4b.5w Startup-Sequence reached" >SYS:m1-3b4b5w-startup.marker
+SYS:m68kdeb-loader SYS:vmlinux-m68k-amiga SYS:initramfs-m68kdeb.gz 5 >SYS:m68kdeb-5w-report.txt
+C:Echo "M1.3b.4b.5w loader returned" >SYS:m1-3b4b5w-returned.marker
+C:Wait 300
+EOF
+
+{
+  echo "aros_source=$AROS_URL"
+  echo "machine=A1200"
+  echo "amiga_model_id=5"
+  echo "cpu=68030"
+  echo "mmu=68030"
+  echo "zorro_iii_memory_kib=65536"
+  echo "payload=actual qualified Linux kernel plus m68kDeb initramfs"
+  echo "transition_entry_execute=not_attempted"
+  echo "mmu_mutation=not_attempted"
+  echo "cache_mutation=not_attempted"
+  echo "linux_jump=not_attempted"
+  sha256sum "$OUT/rom/aros-rom.bin" "$OUT/rom/aros-ext.bin" \
+    "$OUT/aros-root/m68kdeb-loader" "$OUT/aros-root/vmlinux-m68k-amiga" \
+    "$OUT/aros-root/initramfs-m68kdeb.gz" "$OUT/aros-root/S/Startup-Sequence"
+} > "$OUT/RUNTIME_PROVENANCE.txt"
+
+echo 'PASS: prepared M1.3b.4b.5w actual payload identity runtime'
