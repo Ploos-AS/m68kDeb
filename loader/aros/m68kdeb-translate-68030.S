@@ -15,7 +15,9 @@
     .text
     .align  2
     .globl  m68kdeb_translate_68030_ptest
+    .globl  _m68kdeb_translate_68030_ptest
     .type   m68kdeb_translate_68030_ptest,@function
+    .type   _m68kdeb_translate_68030_ptest,@function
 
 /*
  * int m68kdeb_translate_68030_ptest(
@@ -30,8 +32,13 @@
  *
  * Function code #5 selects supervisor data space.  Level #7 requests a
  * bottom-of-walk search, stopping earlier on invalid/limit/bus-error state.
+ *
+ * The AmigaOS GCC toolchain may reference C ABI symbols with a leading
+ * underscore.  Export both spellings at the same entry point so this isolated
+ * assembly probe links correctly without changing its runtime semantics.
  */
 m68kdeb_translate_68030_ptest:
+_m68kdeb_translate_68030_ptest:
     move.l  4(%sp),%a0
     move.l  8(%sp),%a2
     move.l 12(%sp),%a3
@@ -53,3 +60,4 @@ m68kdeb_translate_68030_ptest:
     rts
 
     .size m68kdeb_translate_68030_ptest,.-m68kdeb_translate_68030_ptest
+    .size _m68kdeb_translate_68030_ptest,.-_m68kdeb_translate_68030_ptest
