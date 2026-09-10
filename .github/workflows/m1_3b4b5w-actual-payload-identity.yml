@@ -1,0 +1,193 @@
+name: M1.3b.4b.5w actual payload identity qualification
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'loader/aros/m68kdeb-loader.c'
+      - 'loader/aros/m68kdeb-loader-68030-identity-qual.c'
+      - 'loader/aros/m68kdeb-layout.c'
+      - 'loader/aros/m68kdeb-layout.h'
+      - 'loader/aros/m68kdeb-handoff.c'
+      - 'loader/aros/m68kdeb-handoff.h'
+      - 'loader/aros/m68kdeb-takeover.c'
+      - 'loader/aros/m68kdeb-takeover.h'
+      - 'loader/aros/m68kdeb-68030-takeover-identity.c'
+      - 'loader/aros/m68kdeb-68030-takeover-identity.h'
+      - 'loader/aros/m68kdeb-68030-mmu-state.S'
+      - 'loader/aros/m68kdeb-68030-mmu-state.h'
+      - 'kernel/**'
+      - 'initramfs/**'
+      - 'ci/fs-uae/fetch-aros-m68k-nightly.sh'
+      - 'ci/fs-uae/prepare-m1_3b4b5w-actual-payload-identity.sh'
+      - 'ci/fs-uae/m1_3b4b5w_aros_a1200_actual_payload_identity.fs-uae'
+      - 'docs/M1_3B4B5W_ACTUAL_PAYLOAD_IDENTITY.md'
+      - '.github/workflows/m1_3b4b5w-actual-payload-identity.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build and runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bc bison build-essential ca-certificates cpio curl file flex \
+            fs-uae gcc-m68k-linux-gnu gzip libelf-dev libssl-dev make python3 \
+            scrot unzip xvfb xorriso xz-utils lhasa
+          fs-uae --version
+          docker --version
+
+      - name: Build qualified Amiga kernel and initramfs
+        run: |
+          sh kernel/build-amiga.sh
+          sh initramfs/build-amiga.sh
+          test -s out/kernel-amiga/vmlinux-m68k-amiga
+          test -s out/initramfs-amiga/initramfs-m68kdeb.gz
+
+      - name: Build actual-loader identity qualifier
+        run: |
+          mkdir -p out/m1-3b4b5w
+          docker pull amigadev/m68k-amigaos-gcc:latest
+          docker run --rm -v "$PWD:/work" -w /work amigadev/m68k-amigaos-gcc:latest sh -lc '
+            set -eu
+            CC=$(find / -type f -name "m68k-amigaos-gcc" 2>/dev/null | head -n 1)
+            NM=$(find / -type f -name "m68k-amigaos-nm" 2>/dev/null | head -n 1)
+            test -x "$CC" && test -x "$NM"
+            "$CC" \
+              loader/aros/m68kdeb-loader-68030-identity-qual.c \
+              loader/aros/m68kdeb-layout.c \
+              loader/aros/m68kdeb-handoff.c \
+              loader/aros/m68kdeb-takeover.c \
+              loader/aros/m68kdeb-68030-takeover-identity.c \
+              loader/aros/m68kdeb-68030-mmu-state.S \
+              -o out/m1-3b4b5w/m68kdeb-loader-68030-identity-qual \
+              -m68030 -Os -Wall -Wextra -Werror \
+              -Wno-error=pointer-sign -Wno-error=int-conversion -noixemul
+            "$NM" out/m1-3b4b5w/m68kdeb-loader-68030-identity-qual > out/m1-3b4b5w/loader.nm
+          '
+          file out/m1-3b4b5w/m68kdeb-loader-68030-identity-qual
+          strings out/m1-3b4b5w/m68kdeb-loader-68030-identity-qual | grep -q 'M68KDEB_TAKEOVER_IDENTITY_OK'
+          strings out/m1-3b4b5w/m68kdeb-loader-68030-identity-qual | grep -q 'handoff=NOT_ATTEMPTED'
+          ! grep -Eq '[[:space:]][Tt][[:space:]]_?m68kdeb_takeover_68030_commit$' out/m1-3b4b5w/loader.nm
+          sha256sum out/m1-3b4b5w/m68kdeb-loader-68030-identity-qual \
+            out/kernel-amiga/vmlinux-m68k-amiga \
+            out/initramfs-amiga/initramfs-m68kdeb.gz \
+            > out/m1-3b4b5w/SHA256SUMS
+
+      - name: Enforce reversible boundary
+        run: |
+          ! grep -q 'm68kdeb_takeover_68030_commit(' loader/aros/m68kdeb-loader-68030-identity-qual.c
+          grep -q 'm68kdeb_68030_takeover_identity_from_tc' loader/aros/m68kdeb-loader-68030-identity-qual.c
+          grep -q '#include "m68kdeb-loader.c"' loader/aros/m68kdeb-loader-68030-identity-qual.c
+          {
+            echo 'transition_entry_execute=NOT_ATTEMPTED'
+            echo 'mmu_mutation=NOT_ATTEMPTED'
+            echo 'cache_mutation=NOT_ATTEMPTED'
+            echo 'linux_jump=NOT_ATTEMPTED'
+          } > out/m1-3b4b5w/REVERSIBLE_BOUNDARY.txt
+
+      - name: Prepare matching AROS runtime
+        run: sh ci/fs-uae/prepare-m1_3b4b5w-actual-payload-identity.sh
+
+      - name: Qualify actual payload identity under FS-UAE
+        run: |
+          set +e
+          xvfb-run -a sh -eu -c '
+            fs-uae ci/fs-uae/m1_3b4b5w_aros_a1200_actual_payload_identity.fs-uae >out/m1-3b4b5w/fs-uae.stdout.log 2>&1 &
+            emu=$!
+            startup=0; returned=0; identity=0
+            for i in $(seq 1 240); do
+              [ -f out/m1-3b4b5w/aros-root/m1-3b4b5w-startup.marker ] && startup=1
+              [ -f out/m1-3b4b5w/aros-root/m1-3b4b5w-returned.marker ] && returned=1
+              REPORT=out/m1-3b4b5w/aros-root/m68kdeb-5w-report.txt
+              if [ -f "$REPORT" ] && \
+                 grep -q "M68KDEB_KERNEL_LOADED" "$REPORT" && \
+                 grep -q "M68KDEB_INITRAMFS_LOADED" "$REPORT" && \
+                 grep -q "identity_tc_rc=0" "$REPORT" && \
+                 grep -q "identity_tc=0x00000000" "$REPORT" && \
+                 grep -q "takeover_identity_rc=0" "$REPORT" && \
+                 grep -q "M68KDEB_TAKEOVER_IDENTITY_OK" "$REPORT" && \
+                 grep -q "M68KDEB_TAKEOVER_PREFLIGHT_OK" "$REPORT" && \
+                 grep -q "handoff=NOT_ATTEMPTED" "$REPORT" && \
+                 grep -q "M68KDEB_BOOTINFO_BUILD_OK" "$REPORT"; then identity=1; fi
+              [ "$startup" -eq 1 ] && [ "$returned" -eq 1 ] && [ "$identity" -eq 1 ] && break
+              if ! kill -0 "$emu" 2>/dev/null; then break; fi
+              sleep 1
+            done
+            scrot out/m1-3b4b5w/screenshots/m1-3b4b5w-actual-payload-identity.png || true
+            kill -INT "$emu" 2>/dev/null || true
+            sleep 2
+            kill -TERM "$emu" 2>/dev/null || true
+            wait "$emu" 2>/dev/null || true
+            printf "startup=%s\nreturned=%s\nidentity=%s\n" "$startup" "$returned" "$identity" >out/m1-3b4b5w/BOUNDARIES.txt
+            [ "$startup" -eq 1 ] && [ "$returned" -eq 1 ] && [ "$identity" -eq 1 ]
+          '
+          rc=$?
+          set -e
+          cat out/m1-3b4b5w/aros-root/m68kdeb-5w-report.txt || true
+          cat out/m1-3b4b5w/BOUNDARIES.txt || true
+          exit "$rc"
+
+      - name: Verify exact logical physical equality
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          report = Path('out/m1-3b4b5w/aros-root/m68kdeb-5w-report.txt').read_text()
+          vals = {}
+          for line in report.splitlines():
+              if '=' in line:
+                  k, v = line.split('=', 1)
+                  vals[k] = v
+          for name in ('layout', 'entry', 'bootinfo', 'initramfs'):
+              logical = int(vals[f'identity_{name}_logical'], 16)
+              physical = int(vals[f'identity_{name}_physical'], 16)
+              assert logical != 0
+              assert logical == physical, (name, logical, physical)
+          assert int(vals['identity_layout_plus_bootinfo_bytes']) > 0
+          assert int(vals['identity_initramfs_bytes']) > 0
+          Path('out/m1-3b4b5w/IDENTITY_EQUALITY.txt').write_text(
+              'layout=IDENTITY\nentry=IDENTITY\nbootinfo=IDENTITY\ninitramfs=IDENTITY\n')
+          PY
+
+      - name: Record PASS
+        run: |
+          {
+            echo 'result=PASS'
+            echo "git=${GITHUB_SHA}"
+            echo "workflow_run=${GITHUB_RUN_ID}"
+            echo 'classification=RUNTIME_ACTUAL_PAYLOAD_IDENTITY_PASS'
+            cat out/m1-3b4b5w/REVERSIBLE_BOUNDARY.txt
+            cat out/m1-3b4b5w/BOUNDARIES.txt
+            cat out/m1-3b4b5w/IDENTITY_EQUALITY.txt
+          } > out/m1-3b4b5w/RESULT.txt
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m1-3b4b5w-actual-payload-identity-${{ github.sha }}
+          path: |
+            out/m1-3b4b5w/RESULT.txt
+            out/m1-3b4b5w/REVERSIBLE_BOUNDARY.txt
+            out/m1-3b4b5w/BOUNDARIES.txt
+            out/m1-3b4b5w/IDENTITY_EQUALITY.txt
+            out/m1-3b4b5w/RUNTIME_PROVENANCE.txt
+            out/m1-3b4b5w/SHA256SUMS
+            out/m1-3b4b5w/loader.nm
+            out/m1-3b4b5w/aros-root/m68kdeb-5w-report.txt
+            out/m1-3b4b5w/fs-uae.stdout.log
+            out/m1-3b4b5w/logs/
+            out/m1-3b4b5w/screenshots/
+            out/m1-3b4b5w/rom/
+            out/kernel-amiga/VERSION
+            out/kernel-amiga/SOURCE_URL
+            out/initramfs-amiga/SHA256SUMS
+          if-no-files-found: warn
+          retention-days: 14
