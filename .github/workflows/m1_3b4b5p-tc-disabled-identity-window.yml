@@ -1,0 +1,73 @@
+name: M1.3b.4b.5p TC-disabled identity window
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'loader/aros/m68kdeb-68030-identity-window.c'
+      - 'loader/aros/m68kdeb-68030-identity-window.h'
+      - 'loader/aros/m68kdeb-68030-mmu-state.h'
+      - 'loader/aros/m68kdeb-physwin.c'
+      - 'loader/aros/m68kdeb-physwin.h'
+      - 'tests/test_68030_identity_window.c'
+      - 'docs/M1_3B4B5P_TC_DISABLED_IDENTITY_WINDOW.md'
+      - '.github/workflows/m1_3b4b5p-tc-disabled-identity-window.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build and run host tests
+        run: |
+          mkdir -p out/m1-3b4b5p
+          cc -std=c99 -O2 -Wall -Wextra -Werror \
+            tests/test_68030_identity_window.c \
+            loader/aros/m68kdeb-68030-identity-window.c \
+            loader/aros/m68kdeb-physwin.c \
+            -o out/m1-3b4b5p/test-68030-idwin
+          out/m1-3b4b5p/test-68030-idwin | tee out/m1-3b4b5p/RESULT.txt
+          grep -q 'M68KDEB_68030_IDWIN_TEST_PASS' out/m1-3b4b5p/RESULT.txt
+
+      - name: Cross-build for m68k Amiga
+        run: |
+          docker pull amigadev/m68k-amigaos-gcc:latest
+          docker run --rm -v "$PWD:/work" -w /work \
+            amigadev/m68k-amigaos-gcc:latest sh -lc '
+              set -eu
+              CC=$(find / -type f -name "m68k-amigaos-gcc" 2>/dev/null | head -n 1)
+              test -x "$CC"
+              "$CC" -c loader/aros/m68kdeb-68030-identity-window.c \
+                -o out/m1-3b4b5p/m68kdeb-68030-identity-window.o \
+                -m68000 -Os -Wall -Wextra -Werror -noixemul
+            '
+          file out/m1-3b4b5p/m68kdeb-68030-identity-window.o | tee out/m1-3b4b5p/FILE.txt
+          sha256sum out/m1-3b4b5p/m68kdeb-68030-identity-window.o | tee out/m1-3b4b5p/SHA256SUMS
+
+      - name: Enforce reversible identity-window boundary
+        run: |
+          ! grep -R -n -E 'pmove|ptest|pflusha?|SuperState|m68kdeb_takeover_68030_commit' \
+            loader/aros/m68kdeb-68030-identity-window.c \
+            loader/aros/m68kdeb-68030-identity-window.h
+          grep -q 'If translation is enabled, 5p fails closed' docs/M1_3B4B5P_TC_DISABLED_IDENTITY_WINDOW.md
+          grep -q 'does not dereference the admitted window' docs/M1_3B4B5P_TC_DISABLED_IDENTITY_WINDOW.md
+          printf '%s\n' \
+            'milestone=M1.3b.4b.5p' \
+            'admission=TC-disabled-to-identity-window' \
+            'runtime_tc_evidence=M1.3b.4b.5o' \
+            'mmu_mutation=FORBIDDEN' \
+            'runtime_execution=NOT_ATTEMPTED' \
+            'linux_jump=NOT_ATTEMPTED' \
+            'result=PASS' | tee out/m1-3b4b5p/CLASSIFICATION.txt
+
+      - name: Upload evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: m1-3b4b5p-tc-disabled-identity-window-${{ github.sha }}
+          path: out/m1-3b4b5p/
+          retention-days: 14
