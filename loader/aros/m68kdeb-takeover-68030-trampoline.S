@@ -2,7 +2,7 @@
  * m68kDeb M1.3b.4b.5e MC68030 physical-transition trampoline.
  *
  * Compile/static qualification only for the irreversible entry. Later
- * milestones may execute only the explicitly reversible probe entry below.
+ * milestones may execute only the explicitly reversible probe entries below.
  * The real transition entry remains forbidden until separately qualified.
  */
 
@@ -14,9 +14,11 @@
     .globl  m68kdeb_takeover_68030_trampoline_mmu_off
     .globl  m68kdeb_takeover_68030_trampoline_post_mmu
     .globl  m68kdeb_takeover_68030_trampoline_tc_zero
+    .globl  m68kdeb_takeover_68030_trampoline_abi_probe
     .globl  m68kdeb_takeover_68030_trampoline_reversible_probe
     .globl  m68kdeb_takeover_68030_trampoline_end
     .type   m68kdeb_takeover_68030_trampoline_entry,@function
+    .type   m68kdeb_takeover_68030_trampoline_abi_probe,@function
     .type   m68kdeb_takeover_68030_trampoline_reversible_probe,@function
 
 m68kdeb_takeover_68030_trampoline_start:
@@ -45,6 +47,28 @@ m68kdeb_takeover_68030_trampoline_tc_zero:
     .long   0
 
 /*
+ * M1.3b.4b.5v reversible transition ABI probe.
+ *
+ * Entry register contract mirrors the state staged by the isolated final
+ * commit path after it has loaded the takeover request:
+ *   a0 = takeover request
+ *   a1 = Linux entry
+ *   a2 = bootinfo
+ *   a3 = initramfs
+ *   a4 = caller-owned four-ULONG capture buffer (probe-only)
+ *
+ * The probe merely captures a0-a3 and returns. It performs no privileged
+ * operation and cannot fall through or branch into the real transition path.
+ */
+m68kdeb_takeover_68030_trampoline_abi_probe:
+    move.l  %a0,(%a4)
+    move.l  %a1,4(%a4)
+    move.l  %a2,8(%a4)
+    move.l  %a3,12(%a4)
+    moveq   #0,%d0
+    rts
+
+/*
  * M1.3b.4b.5s reversible execution probe.
  * This entry is deliberately isolated after the transition data and performs
  * no privileged operation, cache/MMU mutation, external reference or branch
@@ -57,4 +81,5 @@ m68kdeb_takeover_68030_trampoline_reversible_probe:
 m68kdeb_takeover_68030_trampoline_end:
 
     .size m68kdeb_takeover_68030_trampoline_entry,.-m68kdeb_takeover_68030_trampoline_entry
+    .size m68kdeb_takeover_68030_trampoline_abi_probe,m68kdeb_takeover_68030_trampoline_reversible_probe-m68kdeb_takeover_68030_trampoline_abi_probe
     .size m68kdeb_takeover_68030_trampoline_reversible_probe,.-m68kdeb_takeover_68030_trampoline_reversible_probe
