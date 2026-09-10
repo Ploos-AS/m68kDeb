@@ -1,0 +1,53 @@
+/*
+ * Reversible MC68030 translation evidence probe.
+ *
+ * PTEST inspects translation state without changing TC/CRP/SRP/TT registers,
+ * the ATC, or descriptor used/modified bits.  The address register result is
+ * the physical address of the last translation-table descriptor accessed; it
+ * is NOT by itself the translated physical address of the tested byte.
+ *
+ * This object is isolated and must not be confused with the irreversible
+ * takeover object.
+ */
+
+    .text
+    .align  2
+    .globl  m68kdeb_translate_68030_ptest
+    .type   m68kdeb_translate_68030_ptest,@function
+
+/*
+ * int m68kdeb_translate_68030_ptest(
+ *     unsigned long logical,
+ *     unsigned long *mmusr_out,
+ *     unsigned long *last_descriptor_phys_out);
+ *
+ * Preconditions:
+ *   - MC68030 with PMMU (not 68EC030)
+ *   - supervisor state
+ *   - output pointers valid
+ *
+ * Function code #5 selects supervisor data space.  Level #7 requests a
+ * bottom-of-walk search, stopping earlier on invalid/limit/bus-error state.
+ */
+m68kdeb_translate_68030_ptest:
+    move.l  4(%sp),%a0
+    move.l  8(%sp),%a2
+    move.l 12(%sp),%a3
+
+    tst.l   %a2
+    beq.s   .Lbad
+    tst.l   %a3
+    beq.s   .Lbad
+
+    ptestw  #5,(%a0),#7,%a1
+    pmove   %mmusr,(%a2)
+    move.l  %a1,(%a3)
+
+    moveq   #0,%d0
+    rts
+
+.Lbad:
+    moveq   #1,%d0
+    rts
+
+    .size m68kdeb_translate_68030_ptest,.-m68kdeb_translate_68030_ptest
