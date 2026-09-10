@@ -1,0 +1,171 @@
+name: M1.3b.4b.5s reversible copied trampoline entry
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'loader/aros/m68kdeb-takeover-68030-trampoline.S'
+      - 'loader/aros/m68kdeb-68030-trampoline-entry-runtime.c'
+      - 'loader/aros/m68kdeb-68030-mmu-state.S'
+      - 'loader/aros/m68kdeb-68030-mmu-state.h'
+      - 'loader/aros/m68kdeb-68030-identity-window.c'
+      - 'loader/aros/m68kdeb-68030-identity-window.h'
+      - 'loader/aros/m68kdeb-physwin.c'
+      - 'loader/aros/m68kdeb-physwin.h'
+      - 'ci/fs-uae/prepare-m1_3b4b5s-trampoline-entry.sh'
+      - 'ci/fs-uae/m1_3b4b5s_aros_a1200_trampoline_entry.fs-uae'
+      - 'docs/M1_3B4B5S_REVERSIBLE_TRAMPOLINE_ENTRY.md'
+      - '.github/workflows/m1_3b4b5s-reversible-trampoline-entry.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ca-certificates curl file fs-uae scrot unzip xvfb xorriso xz-utils lhasa
+          fs-uae --version
+          docker --version
+
+      - name: Build and qualify trampoline blob
+        run: |
+          mkdir -p out/m1-3b4b5s
+          docker pull amigadev/m68k-amigaos-gcc:latest
+          docker run --rm -v "$PWD:/work" -w /work amigadev/m68k-amigaos-gcc:latest sh -lc '
+            set -eu
+            CC=$(find / -type f -name "m68k-amigaos-gcc" 2>/dev/null | head -n 1)
+            NM=$(find / -type f -name "m68k-amigaos-nm" 2>/dev/null | head -n 1)
+            OBJCOPY=$(find / -type f -name "m68k-amigaos-objcopy" 2>/dev/null | head -n 1)
+            OBJDUMP=$(find / -type f -name "m68k-amigaos-objdump" 2>/dev/null | head -n 1)
+            test -x "$CC" && test -x "$NM" && test -x "$OBJCOPY" && test -x "$OBJDUMP"
+            "$CC" -x assembler-with-cpp -c loader/aros/m68kdeb-takeover-68030-trampoline.S -o out/m1-3b4b5s/trampoline.o -m68030 -m68851
+            "$NM" -n out/m1-3b4b5s/trampoline.o > out/m1-3b4b5s/trampoline.nm
+            "$OBJDUMP" -r out/m1-3b4b5s/trampoline.o > out/m1-3b4b5s/trampoline.relocs.txt
+            "$OBJCOPY" -O binary -j .text out/m1-3b4b5s/trampoline.o out/m1-3b4b5s/trampoline.bin
+          '
+          ! grep -Eq '^[[:space:]]*[0-9a-fA-F]+[[:space:]]+R_' out/m1-3b4b5s/trampoline.relocs.txt
+          bytes=$(wc -c < out/m1-3b4b5s/trampoline.bin)
+          test "$bytes" -gt 0 && test "$bytes" -le 4096
+          probe_hex=$(awk '$3=="m68kdeb_takeover_68030_trampoline_reversible_probe"{print $1; exit}' out/m1-3b4b5s/trampoline.nm)
+          end_hex=$(awk '$3=="m68kdeb_takeover_68030_trampoline_end"{print $1; exit}' out/m1-3b4b5s/trampoline.nm)
+          test -n "$probe_hex" && test -n "$end_hex"
+          probe=$((0x$probe_hex)); end=$((0x$end_hex))
+          test "$probe" -ge 0 && test "$probe" -lt "$bytes"
+          test $((end - probe)) -eq 4
+          actual=$(dd if=out/m1-3b4b5s/trampoline.bin bs=1 skip="$probe" count=4 2>/dev/null | od -An -tx1 | tr -d ' \n')
+          test "$actual" = '70004e75'
+          printf 'blob_bytes=%s\nprobe_offset=%s\nprobe_bytes=%s\n' "$bytes" "$probe" "$actual" > out/m1-3b4b5s/BLOB.txt
+          sha256sum out/m1-3b4b5s/trampoline.bin > out/m1-3b4b5s/TRAMPOLINE_SHA256SUMS
+
+      - name: Embed blob and build reversible runtime probe
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          data = Path('out/m1-3b4b5s/trampoline.bin').read_bytes()
+          vals = dict(line.split('=', 1) for line in Path('out/m1-3b4b5s/BLOB.txt').read_text().splitlines())
+          body = ','.join(f'0x{x:02x}' for x in data)
+          Path('out/m1-3b4b5s/trampoline-blob.c').write_text(
+              'unsigned char m68kdeb_trampoline_blob[]={' + body + '};\n'
+              'unsigned int m68kdeb_trampoline_blob_len=sizeof(m68kdeb_trampoline_blob);\n'
+              'unsigned int m68kdeb_trampoline_reversible_probe_offset=' + vals['probe_offset'] + ';\n')
+          PY
+          docker run --rm -v "$PWD:/work" -w /work amigadev/m68k-amigaos-gcc:latest sh -lc '
+            set -eu
+            CC=$(find / -type f -name "m68k-amigaos-gcc" 2>/dev/null | head -n 1)
+            "$CC" -x assembler-with-cpp -c loader/aros/m68kdeb-68030-mmu-state.S -o out/m1-3b4b5s/mmu-state.o -m68030
+            "$CC" loader/aros/m68kdeb-68030-trampoline-entry-runtime.c \
+              loader/aros/m68kdeb-68030-identity-window.c loader/aros/m68kdeb-physwin.c \
+              out/m1-3b4b5s/trampoline-blob.c out/m1-3b4b5s/mmu-state.o \
+              -o out/m1-3b4b5s/m68kdeb-68030-trampoline-entry-runtime \
+              -m68030 -Os -Wall -Wextra -Werror -noixemul
+          '
+          file out/m1-3b4b5s/m68kdeb-68030-trampoline-entry-runtime
+          strings out/m1-3b4b5s/m68kdeb-68030-trampoline-entry-runtime | grep -q M68KDEB_5S_COPIED_PROBE_RETURNED
+
+      - name: Enforce reversible execution boundary
+        run: |
+          ! grep -q 'm68kdeb_takeover_68030_trampoline_entry' loader/aros/m68kdeb-68030-trampoline-entry-runtime.c
+          grep -q 'transition_entry=NOT_ATTEMPTED' loader/aros/m68kdeb-68030-trampoline-entry-runtime.c
+          grep -q 'mmu_mutation=NOT_ATTEMPTED' loader/aros/m68kdeb-68030-trampoline-entry-runtime.c
+          grep -q 'cache_mutation=NOT_ATTEMPTED' loader/aros/m68kdeb-68030-trampoline-entry-runtime.c
+          grep -q 'linux_jump=NOT_ATTEMPTED' loader/aros/m68kdeb-68030-trampoline-entry-runtime.c
+          grep -q 'm68kdeb_takeover_68030_trampoline_reversible_probe' loader/aros/m68kdeb-takeover-68030-trampoline.S
+
+      - name: Prepare matching AROS runtime
+        run: sh ci/fs-uae/prepare-m1_3b4b5s-trampoline-entry.sh
+
+      - name: Run copied reversible entry under FS-UAE
+        run: |
+          set +e
+          xvfb-run -a sh -eu -c '
+            fs-uae ci/fs-uae/m1_3b4b5s_aros_a1200_trampoline_entry.fs-uae >out/m1-3b4b5s/fs-uae.stdout.log 2>&1 &
+            emu=$!
+            startup=0; returned=0; entered=0
+            for i in $(seq 1 180); do
+              [ -f out/m1-3b4b5s/aros-root/m1-3b4b5s-startup.marker ] && startup=1
+              [ -f out/m1-3b4b5s/aros-root/m1-3b4b5s-returned.marker ] && returned=1
+              REPORT=out/m1-3b4b5s/aros-root/m68kdeb-5s-report.txt
+              if [ -f "$REPORT" ] && \
+                 grep -q "identity_rc=0" "$REPORT" && \
+                 grep -q "M68KDEB_5S_COPY_VERIFIED" "$REPORT" && \
+                 grep -q "M68KDEB_5S_AFTER_PROBE rc=0" "$REPORT" && \
+                 grep -q "M68KDEB_5S_COPIED_PROBE_RETURNED" "$REPORT" && \
+                 grep -q "M68KDEB_5S_RETURNED" "$REPORT"; then entered=1; fi
+              [ "$startup" -eq 1 ] && [ "$returned" -eq 1 ] && [ "$entered" -eq 1 ] && break
+              if ! kill -0 "$emu" 2>/dev/null; then break; fi
+              sleep 1
+            done
+            scrot out/m1-3b4b5s/screenshots/m1-3b4b5s-reversible-entry.png || true
+            kill -INT "$emu" 2>/dev/null || true
+            sleep 2
+            kill -TERM "$emu" 2>/dev/null || true
+            wait "$emu" 2>/dev/null || true
+            printf "startup=%s\nreturned=%s\nentered_and_returned=%s\n" "$startup" "$returned" "$entered" >out/m1-3b4b5s/BOUNDARIES.txt
+            [ "$startup" -eq 1 ] && [ "$returned" -eq 1 ] && [ "$entered" -eq 1 ]
+          '
+          rc=$?
+          set -e
+          cat out/m1-3b4b5s/aros-root/m68kdeb-5s-report.txt || true
+          cat out/m1-3b4b5s/BOUNDARIES.txt || true
+          exit "$rc"
+
+      - name: Record PASS
+        run: |
+          {
+            echo 'result=PASS'
+            echo "git=${GITHUB_SHA}"
+            echo "workflow_run=${GITHUB_RUN_ID}"
+            echo 'classification=COPIED_REVERSIBLE_TRAMPOLINE_ENTRY_PASS'
+            echo 'transition_entry=NOT_ATTEMPTED'
+            echo 'mmu_mutation=NOT_ATTEMPTED'
+            echo 'cache_mutation=NOT_ATTEMPTED'
+            echo 'linux_jump=NOT_ATTEMPTED'
+            cat out/m1-3b4b5s/BLOB.txt
+            cat out/m1-3b4b5s/BOUNDARIES.txt
+          } > out/m1-3b4b5s/RESULT.txt
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m1-3b4b5s-reversible-entry-${{ github.sha }}
+          path: |
+            out/m1-3b4b5s/RESULT.txt
+            out/m1-3b4b5s/BLOB.txt
+            out/m1-3b4b5s/TRAMPOLINE_SHA256SUMS
+            out/m1-3b4b5s/trampoline.nm
+            out/m1-3b4b5s/trampoline.relocs.txt
+            out/m1-3b4b5s/BOUNDARIES.txt
+            out/m1-3b4b5s/RUNTIME_PROVENANCE.txt
+            out/m1-3b4b5s/aros-root/m68kdeb-5s-report.txt
+            out/m1-3b4b5s/fs-uae.stdout.log
+            out/m1-3b4b5s/logs/
+            out/m1-3b4b5s/screenshots/
+          retention-days: 14
