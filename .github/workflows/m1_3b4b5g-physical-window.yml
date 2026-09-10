@@ -1,0 +1,59 @@
+name: M1.3b.4b.5g physical transition window
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'loader/aros/m68kdeb-physwin.c'
+      - 'loader/aros/m68kdeb-physwin.h'
+      - 'tests/test_physwin.c'
+      - 'docs/M1_3B4B5G_PHYSICAL_WINDOW.md'
+      - '.github/workflows/m1_3b4b5g-physical-window.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build and run host validator tests
+        run: |
+          mkdir -p out/m1-3b4b5g
+          cc -std=c99 -O2 -Wall -Wextra -Werror \
+            tests/test_physwin.c loader/aros/m68kdeb-physwin.c \
+            -o out/m1-3b4b5g/test-physwin
+          out/m1-3b4b5g/test-physwin | tee out/m1-3b4b5g/RESULT.txt
+          grep -q 'M68KDEB_PHYSWIN_TEST_PASS' out/m1-3b4b5g/RESULT.txt
+
+      - name: Build validator for m68k Amiga target
+        run: |
+          docker pull amigadev/m68k-amigaos-gcc:latest
+          docker run --rm -v "$PWD:/work" -w /work \
+            amigadev/m68k-amigaos-gcc:latest sh -lc '
+              set -eu
+              CC=$(find / -type f -name "m68k-amigaos-gcc" 2>/dev/null | head -n 1)
+              test -x "$CC"
+              "$CC" -c loader/aros/m68kdeb-physwin.c \
+                -o out/m1-3b4b5g/m68kdeb-physwin.o \
+                -m68000 -Os -Wall -Wextra -Werror -noixemul
+            '
+          file out/m1-3b4b5g/m68kdeb-physwin.o | tee out/m1-3b4b5g/FILE.txt
+          sha256sum out/m1-3b4b5g/m68kdeb-physwin.o | tee out/m1-3b4b5g/SHA256SUMS
+
+      - name: Enforce reversible boundary
+        run: |
+          ! grep -R -n -E 'pmove|SuperState|m68kdeb_takeover_68030_commit' \
+            loader/aros/m68kdeb-physwin.c loader/aros/m68kdeb-physwin.h
+          grep -q 'does not disable the MMU' docs/M1_3B4B5G_PHYSICAL_WINDOW.md
+          grep -q 'logical base equals physical base' docs/M1_3B4B5G_PHYSICAL_WINDOW.md
+
+      - name: Upload evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: m1-3b4b5g-physical-window-${{ github.sha }}
+          path: out/m1-3b4b5g/
+          retention-days: 14
