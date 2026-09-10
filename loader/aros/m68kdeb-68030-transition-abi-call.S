@@ -15,10 +15,10 @@
  */
 m68kdeb_68030_call_transition_abi_probe:
 _m68kdeb_68030_call_transition_abi_probe:
-    movem.l %a2-%a4,-(%sp)
-    move.l 16(%sp),%a5
-    move.l 20(%sp),%a0
-    move.l 24(%sp),%a4
+    movem.l %a2-%a5,-(%sp)
+    move.l 20(%sp),%a5
+    move.l 24(%sp),%a0
+    move.l 28(%sp),%a4
     tst.l %a5
     beq.s .Lbad
     tst.l %a0
@@ -34,7 +34,7 @@ _m68kdeb_68030_call_transition_abi_probe:
 .Lbad:
     moveq #1,%d0
 .Ldone:
-    movem.l (%sp)+,%a2-%a4
+    movem.l (%sp)+,%a2-%a5
     rts
 
     .size m68kdeb_68030_call_transition_abi_probe,.-m68kdeb_68030_call_transition_abi_probe
