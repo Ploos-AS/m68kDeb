@@ -47,11 +47,13 @@ jobs:
               OBJDUMP=$(find / -type f -name "m68k-amigaos-objdump" 2>/dev/null | head -n 1)
               test -x "$CC"
               test -x "$OBJDUMP"
+              "$CC" -x assembler-with-cpp -c loader/aros/m68kdeb-translate-68030.S \
+                -o out/m1-3b4b5n/m68kdeb-translate-68030.o -m68030
               "$CC" \
                 loader/aros/m68kdeb-68030-runtime-probe.c \
-                loader/aros/m68kdeb-translate-68030.S \
                 loader/aros/m68kdeb-68030-physread-tt.c \
                 loader/aros/m68kdeb-68030-physread-tt-bounded.c \
+                out/m1-3b4b5n/m68kdeb-translate-68030.o \
                 -o out/m1-3b4b5n/m68kdeb-68030-runtime-probe \
                 -m68030 -Os -Wall -Wextra -Werror -noixemul
               "$OBJDUMP" -dr out/m1-3b4b5n/m68kdeb-68030-runtime-probe \
