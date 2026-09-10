@@ -1,0 +1,18 @@
+[fs-uae]
+amiga_model = A1200
+cpu = 68030
+kickstart_file = out/m1-3b4b5u/rom/aros-rom.bin
+kickstart_ext_file = out/m1-3b4b5u/rom/aros-ext.bin
+uae_cpu_speed = real
+zorro_iii_memory = 65536
+hard_drive_0 = out/m1-3b4b5u/aros-root
+hard_drive_0_label = System
+hard_drive_0_read_only = 0
+fullscreen = 0
+window_width = 752
+window_height = 576
+logs_dir = out/m1-3b4b5u/logs
+screenshots_dir = out/m1-3b4b5u/screenshots
+
+# Reversible takeover-request identity qualification only.
+# No transition entry execution, MMU/cache mutation or Linux jump.
