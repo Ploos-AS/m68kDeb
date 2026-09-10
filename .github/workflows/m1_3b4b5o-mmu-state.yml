@@ -1,0 +1,159 @@
+name: M1.3b.4b.5o 68030 MMU state
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'loader/aros/m68kdeb-68030-mmu-state.S'
+      - 'loader/aros/m68kdeb-68030-mmu-state.h'
+      - 'loader/aros/m68kdeb-68030-mmu-state-runtime.c'
+      - 'ci/fs-uae/fetch-aros-m68k-nightly.sh'
+      - 'ci/fs-uae/prepare-m1_3b4b5o-mmu-state.sh'
+      - 'ci/fs-uae/m1_3b4b5o_aros_a1200_mmu_state.fs-uae'
+      - 'docs/M1_3B4B5O_MMU_STATE.md'
+      - '.github/workflows/m1_3b4b5o-mmu-state.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ca-certificates curl file fs-uae scrot unzip xvfb xorriso xz-utils lhasa
+          fs-uae --version
+          docker --version
+
+      - name: Build read-only TC runtime probe
+        run: |
+          mkdir -p out/m1-3b4b5o
+          docker pull amigadev/m68k-amigaos-gcc:latest
+          docker run --rm -v "$PWD:/work" -w /work \
+            amigadev/m68k-amigaos-gcc:latest sh -lc '
+              set -eu
+              CC=$(find / -type f -name "m68k-amigaos-gcc" 2>/dev/null | head -n 1)
+              OBJDUMP=$(find / -type f -name "m68k-amigaos-objdump" 2>/dev/null | head -n 1)
+              test -x "$CC"
+              test -x "$OBJDUMP"
+              "$CC" -x assembler-with-cpp -c loader/aros/m68kdeb-68030-mmu-state.S \
+                -o out/m1-3b4b5o/m68kdeb-68030-mmu-state.o -m68030
+              "$CC" loader/aros/m68kdeb-68030-mmu-state-runtime.c \
+                out/m1-3b4b5o/m68kdeb-68030-mmu-state.o \
+                -o out/m1-3b4b5o/m68kdeb-68030-mmu-state-runtime \
+                -m68030 -Os -Wall -Wextra -Werror -noixemul
+              "$OBJDUMP" -dr out/m1-3b4b5o/m68kdeb-68030-mmu-state-runtime \
+                > out/m1-3b4b5o/DISASSEMBLY.txt
+            '
+          file out/m1-3b4b5o/m68kdeb-68030-mmu-state-runtime | tee out/m1-3b4b5o/FILE.txt
+          strings out/m1-3b4b5o/m68kdeb-68030-mmu-state-runtime | grep -q 'M68KDEB_5O_TRANSLATION_DISABLED'
+          strings out/m1-3b4b5o/m68kdeb-68030-mmu-state-runtime | grep -q 'M68KDEB_5O_TRANSLATION_ENABLED'
+          sha256sum out/m1-3b4b5o/m68kdeb-68030-mmu-state-runtime | tee out/m1-3b4b5o/SHA256SUMS
+
+      - name: Enforce observation-only MMU boundary
+        run: |
+          grep -Eq 'pmove[[:space:]]+%tc,\(%a0\)' loader/aros/m68kdeb-68030-mmu-state.S
+          test "$(grep -Eic '^[[:space:]]*pmove' loader/aros/m68kdeb-68030-mmu-state.S)" -eq 1
+          ! grep -R -n -E 'ptest|pflusha?|m68kdeb_takeover_68030_commit|movec[^\n]*(cacr|vbr)' \
+            loader/aros/m68kdeb-68030-mmu-state.S \
+            loader/aros/m68kdeb-68030-mmu-state-runtime.c
+          ! grep -R -n -E 'pmove[[:space:]]+\([^)]*\),(%?tc|%?crp|%?srp|%?tt0|%?tt1)' \
+            loader/aros/m68kdeb-68030-mmu-state.S
+          grep -q 'PASS does not require translation to be disabled' docs/M1_3B4B5O_MMU_STATE.md
+
+      - name: Prepare matching AROS runtime
+        run: sh ci/fs-uae/prepare-m1_3b4b5o-mmu-state.sh
+
+      - name: Observe TC under FS-UAE
+        run: |
+          set +e
+          xvfb-run -a sh -eu -c '
+            fs-uae ci/fs-uae/m1_3b4b5o_aros_a1200_mmu_state.fs-uae >out/m1-3b4b5o/fs-uae.stdout.log 2>&1 &
+            emu=$!
+            startup=0
+            returned=0
+            classified=0
+            for i in $(seq 1 180); do
+              [ -f out/m1-3b4b5o/aros-root/m1-3b4b5o-startup.marker ] && startup=1
+              [ -f out/m1-3b4b5o/aros-root/m1-3b4b5o-returned.marker ] && returned=1
+              if [ -f out/m1-3b4b5o/aros-root/m68kdeb-5o-report.txt ]; then
+                if grep -Eq "M68KDEB_5O_TRANSLATION_(ENABLED|DISABLED)" out/m1-3b4b5o/aros-root/m68kdeb-5o-report.txt && \
+                   grep -q "M68KDEB_5O_RETURNED" out/m1-3b4b5o/aros-root/m68kdeb-5o-report.txt; then
+                  classified=1
+                fi
+              fi
+              [ "$startup" -eq 1 ] && [ "$returned" -eq 1 ] && [ "$classified" -eq 1 ] && break
+              if ! kill -0 "$emu" 2>/dev/null; then break; fi
+              sleep 1
+            done
+            scrot out/m1-3b4b5o/screenshots/m1-3b4b5o-mmu-state.png || true
+            kill -INT "$emu" 2>/dev/null || true
+            sleep 2
+            kill -TERM "$emu" 2>/dev/null || true
+            wait "$emu" 2>/dev/null || true
+            printf "startup=%s\nreturned=%s\nclassified=%s\n" \
+              "$startup" "$returned" "$classified" >out/m1-3b4b5o/BOUNDARIES.txt
+            [ "$startup" -eq 1 ] && [ "$returned" -eq 1 ] && [ "$classified" -eq 1 ]
+          '
+          rc=$?
+          set -e
+
+          REPORT=out/m1-3b4b5o/aros-root/m68kdeb-5o-report.txt
+          cat "$REPORT" || true
+          cat out/m1-3b4b5o/BOUNDARIES.txt || true
+          tail -200 out/m1-3b4b5o/fs-uae.stdout.log || true
+
+          if [ "$rc" -eq 0 ]; then
+            state=$(sed -n 's/^M68KDEB_5O_TRANSLATION_\(ENABLED\|DISABLED\)$/\1/p' "$REPORT" | head -n1)
+            tc=$(sed -n 's/^tc=//p' "$REPORT" | head -n1)
+            printf '%s\n' \
+              'milestone=M1.3b.4b.5o' \
+              'observation=TC-read-only' \
+              "translation=$state" \
+              "tc=$tc" \
+              'mmu_mutation=FORBIDDEN' \
+              'linux_jump=NOT_ATTEMPTED' \
+              'result=PASS' >out/m1-3b4b5o/CLASSIFICATION.txt
+          else
+            printf '%s\n' \
+              'milestone=M1.3b.4b.5o' \
+              'observation=NOT_QUALIFIED' \
+              'mmu_mutation=FORBIDDEN' \
+              'linux_jump=NOT_ATTEMPTED' \
+              'result=FAIL' >out/m1-3b4b5o/CLASSIFICATION.txt
+          fi
+          cat out/m1-3b4b5o/CLASSIFICATION.txt
+          exit "$rc"
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m1-3b4b5o-mmu-state-${{ github.sha }}
+          path: |
+            out/m1-3b4b5o/BOUNDARIES.txt
+            out/m1-3b4b5o/CLASSIFICATION.txt
+            out/m1-3b4b5o/RUNTIME_PROVENANCE.txt
+            out/m1-3b4b5o/DISASSEMBLY.txt
+            out/m1-3b4b5o/FILE.txt
+            out/m1-3b4b5o/SHA256SUMS
+            out/m1-3b4b5o/ORIGINAL-Startup-Sequence
+            out/m1-3b4b5o/aros-fetch/SOURCE_URL
+            out/m1-3b4b5o/aros-fetch/SHA256SUMS
+            out/m1-3b4b5o/aros-fetch/ISO_SHA256
+            out/m1-3b4b5o/aros-root/S/Startup-Sequence
+            out/m1-3b4b5o/aros-root/m1-3b4b5o-*.marker
+            out/m1-3b4b5o/aros-root/m68kdeb-5o-report.txt
+            out/m1-3b4b5o/fs-uae.stdout.log
+            out/m1-3b4b5o/logs/
+            out/m1-3b4b5o/screenshots/
+            out/m1-3b4b5o/rom/
+          if-no-files-found: warn
+          retention-days: 14
