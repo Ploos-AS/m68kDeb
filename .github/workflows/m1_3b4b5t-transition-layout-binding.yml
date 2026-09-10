@@ -1,0 +1,179 @@
+name: M1.3b.4b.5t transition layout binding
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'loader/aros/m68kdeb-takeover-68030-trampoline.S'
+      - 'loader/aros/m68kdeb-68030-transition-layout-runtime.c'
+      - 'loader/aros/m68kdeb-68030-mmu-state.S'
+      - 'loader/aros/m68kdeb-68030-mmu-state.h'
+      - 'loader/aros/m68kdeb-68030-identity-window.c'
+      - 'loader/aros/m68kdeb-68030-identity-window.h'
+      - 'loader/aros/m68kdeb-physwin.c'
+      - 'loader/aros/m68kdeb-physwin.h'
+      - 'ci/fs-uae/prepare-m1_3b4b5t-transition-layout.sh'
+      - 'ci/fs-uae/m1_3b4b5t_aros_a1200_transition_layout.fs-uae'
+      - 'docs/M1_3B4B5T_TRANSITION_LAYOUT_BINDING.md'
+      - '.github/workflows/m1_3b4b5t-transition-layout-binding.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ca-certificates curl file fs-uae scrot unzip xvfb xorriso xz-utils lhasa
+
+      - name: Build and qualify transition layout
+        run: |
+          mkdir -p out/m1-3b4b5t
+          docker pull amigadev/m68k-amigaos-gcc:latest
+          docker run --rm -v "$PWD:/work" -w /work amigadev/m68k-amigaos-gcc:latest sh -lc '
+            set -eu
+            CC=$(find / -type f -name "m68k-amigaos-gcc" 2>/dev/null | head -n 1)
+            NM=$(find / -type f -name "m68k-amigaos-nm" 2>/dev/null | head -n 1)
+            OBJCOPY=$(find / -type f -name "m68k-amigaos-objcopy" 2>/dev/null | head -n 1)
+            OBJDUMP=$(find / -type f -name "m68k-amigaos-objdump" 2>/dev/null | head -n 1)
+            test -x "$CC" && test -x "$NM" && test -x "$OBJCOPY" && test -x "$OBJDUMP"
+            "$CC" -x assembler-with-cpp -c loader/aros/m68kdeb-takeover-68030-trampoline.S -o out/m1-3b4b5t/trampoline.o -m68030 -m68851
+            "$NM" -n out/m1-3b4b5t/trampoline.o > out/m1-3b4b5t/trampoline.nm
+            "$OBJDUMP" -r out/m1-3b4b5t/trampoline.o > out/m1-3b4b5t/trampoline.relocs.txt
+            "$OBJCOPY" -O binary -j .text out/m1-3b4b5t/trampoline.o out/m1-3b4b5t/trampoline.bin
+          '
+          ! grep -Eq '^[[:space:]]*[0-9a-fA-F]+[[:space:]]+R_' out/m1-3b4b5t/trampoline.relocs.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          nm = Path('out/m1-3b4b5t/trampoline.nm').read_text().splitlines()
+          syms = {}
+          wanted = {
+              'entry': 'm68kdeb_takeover_68030_trampoline_entry',
+              'mmu': 'm68kdeb_takeover_68030_trampoline_mmu_off',
+              'post': 'm68kdeb_takeover_68030_trampoline_post_mmu',
+              'zero': 'm68kdeb_takeover_68030_trampoline_tc_zero',
+              'end': 'm68kdeb_takeover_68030_trampoline_end',
+          }
+          for line in nm:
+              parts = line.split()
+              if len(parts) >= 3:
+                  for key, name in wanted.items():
+                      if parts[2] == name:
+                          syms[key] = int(parts[0], 16)
+          assert set(syms) == set(wanted), syms
+          data = Path('out/m1-3b4b5t/trampoline.bin').read_bytes()
+          assert len(data) > 0 and len(data) <= 4096
+          assert syms['entry'] < syms['mmu'] < syms['post'] < syms['zero'] < syms['end']
+          assert syms['entry'] == 0
+          assert syms['end'] <= len(data)
+          assert data[syms['zero']:syms['zero']+4] == b'\0\0\0\0'
+          Path('out/m1-3b4b5t/LAYOUT.txt').write_text(
+              f"blob_bytes={len(data)}\nentry_offset={syms['entry']}\nmmu_offset={syms['mmu']}\n"
+              f"post_offset={syms['post']}\ntc_zero_offset={syms['zero']}\nend_offset={syms['end']}\n")
+          body = ','.join(f'0x{x:02x}' for x in data)
+          Path('out/m1-3b4b5t/trampoline-blob.c').write_text(
+              'unsigned char m68kdeb_trampoline_blob[]={' + body + '};\n'
+              'unsigned int m68kdeb_trampoline_blob_len=sizeof(m68kdeb_trampoline_blob);\n'
+              f"unsigned int m68kdeb_trampoline_entry_offset={syms['entry']};\n"
+              f"unsigned int m68kdeb_trampoline_mmu_off_offset={syms['mmu']};\n"
+              f"unsigned int m68kdeb_trampoline_post_mmu_offset={syms['post']};\n"
+              f"unsigned int m68kdeb_trampoline_tc_zero_offset={syms['zero']};\n")
+          PY
+          sha256sum out/m1-3b4b5t/trampoline.bin > out/m1-3b4b5t/TRAMPOLINE_SHA256SUMS
+
+      - name: Build reversible runtime probe
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work amigadev/m68k-amigaos-gcc:latest sh -lc '
+            set -eu
+            CC=$(find / -type f -name "m68k-amigaos-gcc" 2>/dev/null | head -n 1)
+            "$CC" -x assembler-with-cpp -c loader/aros/m68kdeb-68030-mmu-state.S -o out/m1-3b4b5t/mmu-state.o -m68030
+            "$CC" loader/aros/m68kdeb-68030-transition-layout-runtime.c \
+              loader/aros/m68kdeb-68030-identity-window.c loader/aros/m68kdeb-physwin.c \
+              out/m1-3b4b5t/trampoline-blob.c out/m1-3b4b5t/mmu-state.o \
+              -o out/m1-3b4b5t/m68kdeb-68030-transition-layout-runtime \
+              -m68030 -Os -Wall -Wextra -Werror -noixemul
+          '
+          strings out/m1-3b4b5t/m68kdeb-68030-transition-layout-runtime | grep -q M68KDEB_5T_TRANSITION_LAYOUT_BOUND
+
+      - name: Enforce non-execution boundary
+        run: |
+          grep -q 'transition_entry_execute=NOT_ATTEMPTED' loader/aros/m68kdeb-68030-transition-layout-runtime.c
+          grep -q 'mmu_mutation=NOT_ATTEMPTED' loader/aros/m68kdeb-68030-transition-layout-runtime.c
+          grep -q 'cache_mutation=NOT_ATTEMPTED' loader/aros/m68kdeb-68030-transition-layout-runtime.c
+          grep -q 'linux_jump=NOT_ATTEMPTED' loader/aros/m68kdeb-68030-transition-layout-runtime.c
+          ! grep -Eq '\(.*page.*\+.*entry.*\)\(' loader/aros/m68kdeb-68030-transition-layout-runtime.c
+
+      - name: Prepare matching AROS runtime
+        run: sh ci/fs-uae/prepare-m1_3b4b5t-transition-layout.sh
+
+      - name: Bind transition layout under FS-UAE
+        run: |
+          set +e
+          xvfb-run -a sh -eu -c '
+            fs-uae ci/fs-uae/m1_3b4b5t_aros_a1200_transition_layout.fs-uae >out/m1-3b4b5t/fs-uae.stdout.log 2>&1 &
+            emu=$!
+            startup=0; returned=0; bound=0
+            for i in $(seq 1 180); do
+              [ -f out/m1-3b4b5t/aros-root/m1-3b4b5t-startup.marker ] && startup=1
+              [ -f out/m1-3b4b5t/aros-root/m1-3b4b5t-returned.marker ] && returned=1
+              REPORT=out/m1-3b4b5t/aros-root/m68kdeb-5t-report.txt
+              if [ -f "$REPORT" ] && grep -q "identity_rc=0" "$REPORT" && \
+                 grep -q "M68KDEB_5T_TRANSITION_LAYOUT_BOUND" "$REPORT" && \
+                 grep -q "M68KDEB_5T_RETURNED" "$REPORT"; then bound=1; fi
+              [ "$startup" -eq 1 ] && [ "$returned" -eq 1 ] && [ "$bound" -eq 1 ] && break
+              if ! kill -0 "$emu" 2>/dev/null; then break; fi
+              sleep 1
+            done
+            scrot out/m1-3b4b5t/screenshots/m1-3b4b5t-transition-layout.png || true
+            kill -INT "$emu" 2>/dev/null || true
+            sleep 2
+            kill -TERM "$emu" 2>/dev/null || true
+            wait "$emu" 2>/dev/null || true
+            printf "startup=%s\nreturned=%s\nlayout_bound=%s\n" "$startup" "$returned" "$bound" >out/m1-3b4b5t/BOUNDARIES.txt
+            [ "$startup" -eq 1 ] && [ "$returned" -eq 1 ] && [ "$bound" -eq 1 ]
+          '
+          rc=$?
+          set -e
+          cat out/m1-3b4b5t/aros-root/m68kdeb-5t-report.txt || true
+          cat out/m1-3b4b5t/BOUNDARIES.txt || true
+          exit "$rc"
+
+      - name: Record PASS
+        run: |
+          {
+            echo 'result=PASS'
+            echo "git=${GITHUB_SHA}"
+            echo "workflow_run=${GITHUB_RUN_ID}"
+            echo 'classification=RUNTIME_TRANSITION_LAYOUT_BINDING_PASS'
+            echo 'transition_entry_execute=NOT_ATTEMPTED'
+            echo 'mmu_mutation=NOT_ATTEMPTED'
+            echo 'cache_mutation=NOT_ATTEMPTED'
+            echo 'linux_jump=NOT_ATTEMPTED'
+            cat out/m1-3b4b5t/LAYOUT.txt
+            cat out/m1-3b4b5t/BOUNDARIES.txt
+          } > out/m1-3b4b5t/RESULT.txt
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m1-3b4b5t-transition-layout-${{ github.sha }}
+          path: |
+            out/m1-3b4b5t/RESULT.txt
+            out/m1-3b4b5t/LAYOUT.txt
+            out/m1-3b4b5t/TRAMPOLINE_SHA256SUMS
+            out/m1-3b4b5t/trampoline.nm
+            out/m1-3b4b5t/trampoline.relocs.txt
+            out/m1-3b4b5t/BOUNDARIES.txt
+            out/m1-3b4b5t/RUNTIME_PROVENANCE.txt
+            out/m1-3b4b5t/aros-root/m68kdeb-5t-report.txt
+            out/m1-3b4b5t/fs-uae.stdout.log
+            out/m1-3b4b5t/logs/
+            out/m1-3b4b5t/screenshots/
+          retention-days: 14
