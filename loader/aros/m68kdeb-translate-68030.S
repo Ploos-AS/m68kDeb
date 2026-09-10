@@ -36,12 +36,17 @@
  * The AmigaOS GCC toolchain may reference C ABI symbols with a leading
  * underscore.  Export both spellings at the same entry point so this isolated
  * assembly probe links correctly without changing its runtime semantics.
+ *
+ * A2 and A3 are callee-saved in the Amiga GCC ABI. Preserve them explicitly;
+ * failure to do so corrupts caller state after the supervisor PTEST returns.
  */
 m68kdeb_translate_68030_ptest:
 _m68kdeb_translate_68030_ptest:
-    move.l  4(%sp),%a0
-    move.l  8(%sp),%a2
-    move.l 12(%sp),%a3
+    movem.l %a2-%a3,-(%sp)
+
+    move.l 12(%sp),%a0
+    move.l 16(%sp),%a2
+    move.l 20(%sp),%a3
 
     tst.l   %a2
     beq.s   .Lbad
@@ -52,10 +57,12 @@ _m68kdeb_translate_68030_ptest:
     pmove   %psr,(%a2)
     move.l  %a1,(%a3)
 
+    movem.l (%sp)+,%a2-%a3
     moveq   #0,%d0
     rts
 
 .Lbad:
+    movem.l (%sp)+,%a2-%a3
     moveq   #1,%d0
     rts
 
