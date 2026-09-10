@@ -48,7 +48,7 @@ jobs:
         run: |
           ! grep -R -n -E 'pmove|SuperState|m68kdeb_takeover_68030_commit' \
             loader/aros/m68kdeb-physwin.c loader/aros/m68kdeb-physwin.h
-          grep -q 'does not disable the MMU' docs/M1_3B4B5G_PHYSICAL_WINDOW.md
+          grep -Eq 'does( \*\*)?not(\*\*)? disable the MMU' docs/M1_3B4B5G_PHYSICAL_WINDOW.md
           grep -q 'logical base equals physical base' docs/M1_3B4B5G_PHYSICAL_WINDOW.md
 
       - name: Upload evidence
