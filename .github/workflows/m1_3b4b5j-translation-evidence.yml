@@ -1,0 +1,70 @@
+name: M1.3b.4b.5j translation evidence resolver
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'loader/aros/m68kdeb-68030-evidence.c'
+      - 'loader/aros/m68kdeb-68030-evidence.h'
+      - 'loader/aros/m68kdeb-68030-descriptor.c'
+      - 'loader/aros/m68kdeb-68030-descriptor.h'
+      - 'tests/test_68030_evidence.c'
+      - 'docs/M1_3B4B5J_TRANSLATION_EVIDENCE.md'
+      - '.github/workflows/m1_3b4b5j-translation-evidence.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build and run host evidence tests
+        run: |
+          mkdir -p out/m1-3b4b5j
+          cc -std=c99 -O2 -Wall -Wextra -Werror \
+            tests/test_68030_evidence.c \
+            loader/aros/m68kdeb-68030-evidence.c \
+            loader/aros/m68kdeb-68030-descriptor.c \
+            -o out/m1-3b4b5j/test-68030-evidence
+          out/m1-3b4b5j/test-68030-evidence | tee out/m1-3b4b5j/RESULT.txt
+          grep -q 'M68KDEB_68030_EVIDENCE_TEST_PASS' out/m1-3b4b5j/RESULT.txt
+
+      - name: Build evidence resolver for m68k Amiga target
+        run: |
+          docker pull amigadev/m68k-amigaos-gcc:latest
+          docker run --rm -v "$PWD:/work" -w /work \
+            amigadev/m68k-amigaos-gcc:latest sh -lc '
+              set -eu
+              CC=$(find / -type f -name "m68k-amigaos-gcc" 2>/dev/null | head -n 1)
+              test -x "$CC"
+              "$CC" -c loader/aros/m68kdeb-68030-evidence.c \
+                -o out/m1-3b4b5j/m68kdeb-68030-evidence.o \
+                -m68000 -Os -Wall -Wextra -Werror -noixemul
+            '
+          file out/m1-3b4b5j/m68kdeb-68030-evidence.o | tee out/m1-3b4b5j/FILE.txt
+          sha256sum out/m1-3b4b5j/m68kdeb-68030-evidence.o | tee out/m1-3b4b5j/SHA256SUMS
+
+      - name: Enforce reversible evidence boundary
+        run: |
+          ! grep -R -n -E 'pmove|ptest|pflusha?|SuperState|m68kdeb_takeover_68030_commit' \
+            loader/aros/m68kdeb-68030-evidence.c loader/aros/m68kdeb-68030-evidence.h
+          grep -q 'does not itself read physical memory' docs/M1_3B4B5J_TRANSLATION_EVIDENCE.md
+          grep -q 'does not prove an identity mapping' docs/M1_3B4B5J_TRANSLATION_EVIDENCE.md
+          printf '%s\n' \
+            'milestone=M1.3b.4b.5j' \
+            'composition=PTEST-status+terminal-descriptor' \
+            'physical_memory_read=NOT_ATTEMPTED' \
+            'mmu_mutation=FORBIDDEN' \
+            'runtime_execution=NOT_ATTEMPTED' \
+            'result=PASS' | tee out/m1-3b4b5j/CLASSIFICATION.txt
+
+      - name: Upload evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: m1-3b4b5j-translation-evidence-${{ github.sha }}
+          path: out/m1-3b4b5j/
+          retention-days: 14
