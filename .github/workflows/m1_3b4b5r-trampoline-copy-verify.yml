@@ -1,0 +1,126 @@
+name: M1.3b.4b.5r trampoline copy verify
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'loader/aros/m68kdeb-takeover-68030-trampoline.S'
+      - 'loader/aros/m68kdeb-68030-trampoline-copy-runtime.c'
+      - 'loader/aros/m68kdeb-68030-mmu-state.S'
+      - 'loader/aros/m68kdeb-68030-identity-window.c'
+      - 'loader/aros/m68kdeb-physwin.c'
+      - 'ci/fs-uae/prepare-m1_3b4b5r-trampoline-copy.sh'
+      - 'ci/fs-uae/m1_3b4b5r_aros_a1200_trampoline_copy.fs-uae'
+      - 'docs/M1_3B4B5R_TRAMPOLINE_COPY_VERIFY.md'
+      - '.github/workflows/m1_3b4b5r-trampoline-copy-verify.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ca-certificates curl file fs-uae scrot unzip xvfb xorriso xz-utils lhasa
+
+      - name: Build raw trampoline blob
+        run: |
+          mkdir -p out/m1-3b4b5r
+          docker pull amigadev/m68k-amigaos-gcc:latest
+          docker run --rm -v "$PWD:/work" -w /work amigadev/m68k-amigaos-gcc:latest sh -lc '
+            set -eu
+            CC=$(find / -type f -name "m68k-amigaos-gcc" 2>/dev/null | head -n 1)
+            OBJCOPY=$(find / -type f -name "m68k-amigaos-objcopy" 2>/dev/null | head -n 1)
+            OBJDUMP=$(find / -type f -name "m68k-amigaos-objdump" 2>/dev/null | head -n 1)
+            test -x "$CC" && test -x "$OBJCOPY" && test -x "$OBJDUMP"
+            "$CC" -x assembler-with-cpp -c loader/aros/m68kdeb-takeover-68030-trampoline.S -o out/m1-3b4b5r/trampoline.o -m68030
+            "$OBJDUMP" -r out/m1-3b4b5r/trampoline.o > out/m1-3b4b5r/trampoline.relocs.txt
+            "$OBJCOPY" -O binary -j .text out/m1-3b4b5r/trampoline.o out/m1-3b4b5r/trampoline.bin
+          '
+          test -s out/m1-3b4b5r/trampoline.bin
+          bytes=$(wc -c < out/m1-3b4b5r/trampoline.bin)
+          test "$bytes" -le 4096
+          ! grep -Eq '^[[:space:]]*[0-9a-fA-F]+[[:space:]]+R_' out/m1-3b4b5r/trampoline.relocs.txt
+          echo "blob_bytes=$bytes" > out/m1-3b4b5r/BLOB.txt
+          sha256sum out/m1-3b4b5r/trampoline.bin > out/m1-3b4b5r/TRAMPOLINE_SHA256SUMS
+
+      - name: Embed blob and build probe
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          data = Path('out/m1-3b4b5r/trampoline.bin').read_bytes()
+          body = ','.join(f'0x{x:02x}' for x in data)
+          Path('out/m1-3b4b5r/trampoline-blob.c').write_text(
+              'unsigned char m68kdeb_trampoline_blob[]={' + body + '};\n'
+              'unsigned int m68kdeb_trampoline_blob_len=sizeof(m68kdeb_trampoline_blob);\n')
+          PY
+          docker run --rm -v "$PWD:/work" -w /work amigadev/m68k-amigaos-gcc:latest sh -lc '
+            set -eu
+            CC=$(find / -type f -name "m68k-amigaos-gcc" 2>/dev/null | head -n 1)
+            "$CC" -x assembler-with-cpp -c loader/aros/m68kdeb-68030-mmu-state.S -o out/m1-3b4b5r/mmu-state.o -m68030
+            "$CC" loader/aros/m68kdeb-68030-trampoline-copy-runtime.c loader/aros/m68kdeb-68030-identity-window.c loader/aros/m68kdeb-physwin.c out/m1-3b4b5r/trampoline-blob.c out/m1-3b4b5r/mmu-state.o -o out/m1-3b4b5r/m68kdeb-68030-trampoline-copy-runtime -m68030 -Os -Wall -Wextra -Werror -noixemul
+          '
+          strings out/m1-3b4b5r/m68kdeb-68030-trampoline-copy-runtime | grep -q M68KDEB_5R_BLOB_VERIFY_OK
+
+      - name: Enforce non-execution boundary
+        run: |
+          grep -q 'trampoline_execute=NOT_ATTEMPTED' loader/aros/m68kdeb-68030-trampoline-copy-runtime.c
+          grep -q 'linux_jump=NOT_ATTEMPTED' loader/aros/m68kdeb-68030-trampoline-copy-runtime.c
+          grep -q 'CopyMem' loader/aros/m68kdeb-68030-trampoline-copy-runtime.c
+          grep -q 'bytes_equal' loader/aros/m68kdeb-68030-trampoline-copy-runtime.c
+
+      - name: Prepare AROS runtime
+        run: sh ci/fs-uae/prepare-m1_3b4b5r-trampoline-copy.sh
+
+      - name: Run copy verification under FS-UAE
+        run: |
+          set +e
+          xvfb-run -a sh -eu -c '
+            fs-uae ci/fs-uae/m1_3b4b5r_aros_a1200_trampoline_copy.fs-uae >out/m1-3b4b5r/fs-uae.stdout.log 2>&1 &
+            emu=$!
+            startup=0; returned=0; verified=0
+            for i in $(seq 1 180); do
+              [ -f out/m1-3b4b5r/aros-root/m1-3b4b5r-startup.marker ] && startup=1
+              [ -f out/m1-3b4b5r/aros-root/m1-3b4b5r-returned.marker ] && returned=1
+              REPORT=out/m1-3b4b5r/aros-root/m68kdeb-5r-report.txt
+              if [ -f "$REPORT" ] && grep -q "identity_rc=0" "$REPORT" && grep -q "M68KDEB_5R_BLOB_VERIFY_OK" "$REPORT" && grep -q "M68KDEB_5R_RETURNED" "$REPORT"; then verified=1; fi
+              [ "$startup" -eq 1 ] && [ "$returned" -eq 1 ] && [ "$verified" -eq 1 ] && break
+              if ! kill -0 "$emu" 2>/dev/null; then break; fi
+              sleep 1
+            done
+            scrot out/m1-3b4b5r/screenshots/m1-3b4b5r-trampoline-copy.png || true
+            kill -INT "$emu" 2>/dev/null || true
+            sleep 2
+            kill -TERM "$emu" 2>/dev/null || true
+            wait "$emu" 2>/dev/null || true
+            printf "startup=%s\nreturned=%s\nverified=%s\n" "$startup" "$returned" "$verified" >out/m1-3b4b5r/BOUNDARIES.txt
+            [ "$startup" -eq 1 ] && [ "$returned" -eq 1 ] && [ "$verified" -eq 1 ]
+          '
+          rc=$?
+          set -e
+          cat out/m1-3b4b5r/aros-root/m68kdeb-5r-report.txt || true
+          cat out/m1-3b4b5r/BOUNDARIES.txt || true
+          exit "$rc"
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m1-3b4b5r-trampoline-copy-${{ github.sha }}
+          path: |
+            out/m1-3b4b5r/BLOB.txt
+            out/m1-3b4b5r/TRAMPOLINE_SHA256SUMS
+            out/m1-3b4b5r/trampoline.relocs.txt
+            out/m1-3b4b5r/BOUNDARIES.txt
+            out/m1-3b4b5r/RUNTIME_PROVENANCE.txt
+            out/m1-3b4b5r/aros-root/m68kdeb-5r-report.txt
+            out/m1-3b4b5r/fs-uae.stdout.log
+            out/m1-3b4b5r/logs/
+            out/m1-3b4b5r/screenshots/
+          retention-days: 14
