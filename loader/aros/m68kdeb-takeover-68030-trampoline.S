@@ -1,14 +1,9 @@
 /*
  * m68kDeb M1.3b.4b.5e MC68030 physical-transition trampoline.
  *
- * Compile/static qualification only. This object MUST NOT be linked into the
- * real loader or executed yet. It defines the complete instruction/data span
- * that would have to reside at a qualified physical==logical address before
- * translation can safely be disabled.
- *
- * The 5e gate proves containment and relocation freedom only. It does NOT
- * prove that any AROS virtual address equals its physical address, and it does
- * NOT authorize runtime execution.
+ * Compile/static qualification only for the irreversible entry. Later
+ * milestones may execute only the explicitly reversible probe entry below.
+ * The real transition entry remains forbidden until separately qualified.
  */
 
     .text
@@ -19,8 +14,10 @@
     .globl  m68kdeb_takeover_68030_trampoline_mmu_off
     .globl  m68kdeb_takeover_68030_trampoline_post_mmu
     .globl  m68kdeb_takeover_68030_trampoline_tc_zero
+    .globl  m68kdeb_takeover_68030_trampoline_reversible_probe
     .globl  m68kdeb_takeover_68030_trampoline_end
     .type   m68kdeb_takeover_68030_trampoline_entry,@function
+    .type   m68kdeb_takeover_68030_trampoline_reversible_probe,@function
 
 m68kdeb_takeover_68030_trampoline_start:
 m68kdeb_takeover_68030_trampoline_entry:
@@ -39,15 +36,25 @@ m68kdeb_takeover_68030_trampoline_post_mmu:
     /* Every instruction fetched from here must remain physically reachable. */
     pflusha
 
-    /* 5e intentionally has no kernel jump. A runtime-capable successor will
-     * replace this halt only after physical placement and entry ABI are proven.
-     */
+    /* 5e intentionally has no kernel jump. */
 .Lhalt:
     bra.s   .Lhalt
 
     .align  2
 m68kdeb_takeover_68030_trampoline_tc_zero:
     .long   0
+
+/*
+ * M1.3b.4b.5s reversible execution probe.
+ * This entry is deliberately isolated after the transition data and performs
+ * no privileged operation, cache/MMU mutation, external reference or branch
+ * into the real transition path. A copied blob may call this offset and must
+ * return to its caller via RTS.
+ */
+m68kdeb_takeover_68030_trampoline_reversible_probe:
+    moveq   #0,%d0
+    rts
 m68kdeb_takeover_68030_trampoline_end:
 
     .size m68kdeb_takeover_68030_trampoline_entry,.-m68kdeb_takeover_68030_trampoline_entry
+    .size m68kdeb_takeover_68030_trampoline_reversible_probe,.-m68kdeb_takeover_68030_trampoline_reversible_probe
