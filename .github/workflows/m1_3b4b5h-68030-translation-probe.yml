@@ -1,0 +1,61 @@
+name: M1.3b.4b.5h 68030 translation probe
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'loader/aros/m68kdeb-translate-68030.S'
+      - 'loader/aros/m68kdeb-translate-68030.h'
+      - 'docs/M1_3B4B5H_68030_TRANSLATION_PROBE.md'
+      - '.github/workflows/m1_3b4b5h-68030-translation-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build isolated probe
+        run: |
+          mkdir -p out/m1-3b4b5h
+          docker pull amigadev/m68k-amigaos-gcc:latest
+          docker run --rm -v "$PWD:/work" -w /work \
+            amigadev/m68k-amigaos-gcc:latest sh -lc '
+              set -eu
+              CC=$(find / -type f -name "m68k-amigaos-gcc" 2>/dev/null | head -n 1)
+              OBJDUMP=$(find / -type f -name "m68k-amigaos-objdump" 2>/dev/null | head -n 1)
+              test -x "$CC"
+              test -x "$OBJDUMP"
+              "$CC" -c loader/aros/m68kdeb-translate-68030.S \
+                -o out/m1-3b4b5h/m68kdeb-translate-68030.o \
+                -m68030 -Wa,--fatal-warnings -noixemul
+              "$OBJDUMP" -dr out/m1-3b4b5h/m68kdeb-translate-68030.o \
+                > out/m1-3b4b5h/DISASSEMBLY.txt
+            '
+          file out/m1-3b4b5h/m68kdeb-translate-68030.o | tee out/m1-3b4b5h/FILE.txt
+          sha256sum out/m1-3b4b5h/m68kdeb-translate-68030.o | tee out/m1-3b4b5h/SHA256SUMS
+
+      - name: Qualify non-mutating instruction boundary
+        run: |
+          grep -Eiq 'ptestw|ptest' out/m1-3b4b5h/DISASSEMBLY.txt
+          grep -Eiq 'pmove.*mmusr|mmusr.*pmove' out/m1-3b4b5h/DISASSEMBLY.txt
+          ! grep -Ei 'pmove.*(tc|crp|srp|tt0|tt1).*\(' out/m1-3b4b5h/DISASSEMBLY.txt
+          ! grep -Ei 'pflusha?|m68kdeb_takeover_68030_commit' out/m1-3b4b5h/DISASSEMBLY.txt
+          grep -q 'not, by itself, the translated physical address' docs/M1_3B4B5H_68030_TRANSLATION_PROBE.md
+          printf '%s\n' \
+            'milestone=M1.3b.4b.5h' \
+            'probe=PTESTW+MMUSR' \
+            'mmu_mutation=FORBIDDEN' \
+            'runtime_execution=NOT_ATTEMPTED' \
+            'result=PASS' | tee out/m1-3b4b5h/CLASSIFICATION.txt
+
+      - name: Upload evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: m1-3b4b5h-68030-translation-probe-${{ github.sha }}
+          path: out/m1-3b4b5h/
+          retention-days: 14
