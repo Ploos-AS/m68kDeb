@@ -1,0 +1,73 @@
+name: M1.3b.4b.5m bounded TT descriptor read
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'loader/aros/m68kdeb-68030-physread-tt-bounded.c'
+      - 'loader/aros/m68kdeb-68030-physread-tt-bounded.h'
+      - 'loader/aros/m68kdeb-68030-physread-tt.c'
+      - 'loader/aros/m68kdeb-68030-physread-tt.h'
+      - 'tests/test_68030_physread_tt_bounded.c'
+      - 'docs/M1_3B4B5M_BOUNDED_TT_DESCRIPTOR_READ.md'
+      - '.github/workflows/m1_3b4b5m-bounded-tt-descriptor-read.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build and run host validation tests
+        run: |
+          mkdir -p out/m1-3b4b5m
+          cc -std=c99 -O2 -Wall -Wextra -Werror \
+            tests/test_68030_physread_tt_bounded.c \
+            loader/aros/m68kdeb-68030-physread-tt-bounded.c \
+            -o out/m1-3b4b5m/test-68030-ttbounded
+          out/m1-3b4b5m/test-68030-ttbounded | tee out/m1-3b4b5m/RESULT.txt
+          grep -q 'M68KDEB_68030_TTBOUNDED_TEST_PASS' out/m1-3b4b5m/RESULT.txt
+
+      - name: Build bounded reader for m68k Amiga target
+        run: |
+          docker pull amigadev/m68k-amigaos-gcc:latest
+          docker run --rm -v "$PWD:/work" -w /work \
+            amigadev/m68k-amigaos-gcc:latest sh -lc '
+              set -eu
+              CC=$(find / -type f -name "m68k-amigaos-gcc" 2>/dev/null | head -n 1)
+              OBJDUMP=$(find / -type f -name "m68k-amigaos-objdump" 2>/dev/null | head -n 1)
+              test -x "$CC"
+              test -x "$OBJDUMP"
+              "$CC" -c loader/aros/m68kdeb-68030-physread-tt-bounded.c \
+                -o out/m1-3b4b5m/m68kdeb-68030-physread-tt-bounded.o \
+                -m68000 -Os -Wall -Wextra -Werror -noixemul
+              "$OBJDUMP" -dr out/m1-3b4b5m/m68kdeb-68030-physread-tt-bounded.o \
+                > out/m1-3b4b5m/DISASSEMBLY.txt
+            '
+          file out/m1-3b4b5m/m68kdeb-68030-physread-tt-bounded.o | tee out/m1-3b4b5m/FILE.txt
+          sha256sum out/m1-3b4b5m/m68kdeb-68030-physread-tt-bounded.o | tee out/m1-3b4b5m/SHA256SUMS
+
+      - name: Enforce bounded reversible boundary
+        run: |
+          ! grep -R -n -E 'pmove|ptest|pflusha?|SuperState|m68kdeb_takeover_68030_commit' \
+            loader/aros/m68kdeb-68030-physread-tt-bounded.c \
+            loader/aros/m68kdeb-68030-physread-tt-bounded.h
+          grep -q 'only descriptor-sized reads' docs/M1_3B4B5M_BOUNDED_TT_DESCRIPTOR_READ.md
+          grep -q 'fails closed before memory is touched' docs/M1_3B4B5M_BOUNDED_TT_DESCRIPTOR_READ.md
+          printf '%s\n' \
+            'milestone=M1.3b.4b.5m' \
+            'reader=TT-identity-bounded-4-or-8-byte' \
+            'runtime_execution=NOT_ATTEMPTED' \
+            'mmu_mutation=FORBIDDEN' \
+            'result=PASS' | tee out/m1-3b4b5m/CLASSIFICATION.txt
+
+      - name: Upload evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: m1-3b4b5m-bounded-tt-descriptor-read-${{ github.sha }}
+          path: out/m1-3b4b5m/
+          retention-days: 14
