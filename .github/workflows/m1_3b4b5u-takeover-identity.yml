@@ -1,0 +1,133 @@
+name: M1.3b.4b.5u takeover identity contract
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'loader/aros/m68kdeb-68030-takeover-identity.c'
+      - 'loader/aros/m68kdeb-68030-takeover-identity.h'
+      - 'loader/aros/m68kdeb-68030-takeover-identity-runtime.c'
+      - 'loader/aros/m68kdeb-68030-mmu-state.S'
+      - 'loader/aros/m68kdeb-68030-mmu-state.h'
+      - 'loader/aros/m68kdeb-takeover.c'
+      - 'loader/aros/m68kdeb-takeover.h'
+      - 'ci/fs-uae/prepare-m1_3b4b5u-takeover-identity.sh'
+      - 'ci/fs-uae/m1_3b4b5u_aros_a1200_takeover_identity.fs-uae'
+      - 'docs/M1_3B4B5U_TAKEOVER_IDENTITY_CONTRACT.md'
+      - '.github/workflows/m1_3b4b5u-takeover-identity.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ca-certificates curl file fs-uae scrot unzip xvfb xorriso xz-utils lhasa
+          fs-uae --version
+          docker --version
+
+      - name: Build reversible takeover identity probe
+        run: |
+          mkdir -p out/m1-3b4b5u
+          docker pull amigadev/m68k-amigaos-gcc:latest
+          docker run --rm -v "$PWD:/work" -w /work amigadev/m68k-amigaos-gcc:latest sh -lc '
+            set -eu
+            CC=$(find / -type f -name "m68k-amigaos-gcc" 2>/dev/null | head -n 1)
+            test -x "$CC"
+            "$CC" -x assembler-with-cpp -c loader/aros/m68kdeb-68030-mmu-state.S \
+              -o out/m1-3b4b5u/mmu-state.o -m68030
+            "$CC" \
+              loader/aros/m68kdeb-68030-takeover-identity-runtime.c \
+              loader/aros/m68kdeb-68030-takeover-identity.c \
+              loader/aros/m68kdeb-takeover.c \
+              out/m1-3b4b5u/mmu-state.o \
+              -o out/m1-3b4b5u/m68kdeb-68030-takeover-identity-runtime \
+              -m68030 -Os -Wall -Wextra -Werror -noixemul
+          '
+          file out/m1-3b4b5u/m68kdeb-68030-takeover-identity-runtime
+          strings out/m1-3b4b5u/m68kdeb-68030-takeover-identity-runtime | grep -q M68KDEB_5U_TAKEOVER_IDENTITY_BOUND
+
+      - name: Enforce reversible boundary
+        run: |
+          grep -q 'transition_entry_execute=NOT_ATTEMPTED' loader/aros/m68kdeb-68030-takeover-identity-runtime.c
+          grep -q 'mmu_mutation=NOT_ATTEMPTED' loader/aros/m68kdeb-68030-takeover-identity-runtime.c
+          grep -q 'cache_mutation=NOT_ATTEMPTED' loader/aros/m68kdeb-68030-takeover-identity-runtime.c
+          grep -q 'linux_jump=NOT_ATTEMPTED' loader/aros/m68kdeb-68030-takeover-identity-runtime.c
+          ! grep -q 'm68kdeb_takeover_68030_commit' loader/aros/m68kdeb-68030-takeover-identity-runtime.c
+          ! grep -Eq 'pflusha|movec[^\n]*cacr|pmove[^\n]*tc' loader/aros/m68kdeb-68030-takeover-identity-runtime.c
+
+      - name: Prepare matching AROS runtime
+        run: sh ci/fs-uae/prepare-m1_3b4b5u-takeover-identity.sh
+
+      - name: Qualify takeover identity under FS-UAE
+        run: |
+          set +e
+          xvfb-run -a sh -eu -c '
+            fs-uae ci/fs-uae/m1_3b4b5u_aros_a1200_takeover_identity.fs-uae >out/m1-3b4b5u/fs-uae.stdout.log 2>&1 &
+            emu=$!
+            startup=0; returned=0; bound=0
+            for i in $(seq 1 180); do
+              [ -f out/m1-3b4b5u/aros-root/m1-3b4b5u-startup.marker ] && startup=1
+              [ -f out/m1-3b4b5u/aros-root/m1-3b4b5u-returned.marker ] && returned=1
+              REPORT=out/m1-3b4b5u/aros-root/m68kdeb-5u-report.txt
+              if [ -f "$REPORT" ] && \
+                 grep -q "preflight_rc=0" "$REPORT" && \
+                 grep -q "tc=0x00000000 tc_rc=0" "$REPORT" && \
+                 grep -q "identity_rc=0" "$REPORT" && \
+                 grep -q "M68KDEB_5U_TAKEOVER_IDENTITY_BOUND" "$REPORT" && \
+                 grep -q "M68KDEB_5U_RETURNED" "$REPORT"; then bound=1; fi
+              [ "$startup" -eq 1 ] && [ "$returned" -eq 1 ] && [ "$bound" -eq 1 ] && break
+              if ! kill -0 "$emu" 2>/dev/null; then break; fi
+              sleep 1
+            done
+            scrot out/m1-3b4b5u/screenshots/m1-3b4b5u-takeover-identity.png || true
+            kill -INT "$emu" 2>/dev/null || true
+            sleep 2
+            kill -TERM "$emu" 2>/dev/null || true
+            wait "$emu" 2>/dev/null || true
+            printf "startup=%s\nreturned=%s\ntakeover_identity_bound=%s\n" "$startup" "$returned" "$bound" >out/m1-3b4b5u/BOUNDARIES.txt
+            [ "$startup" -eq 1 ] && [ "$returned" -eq 1 ] && [ "$bound" -eq 1 ]
+          '
+          rc=$?
+          set -e
+          cat out/m1-3b4b5u/aros-root/m68kdeb-5u-report.txt || true
+          cat out/m1-3b4b5u/BOUNDARIES.txt || true
+          exit "$rc"
+
+      - name: Record PASS
+        run: |
+          {
+            echo 'result=PASS'
+            echo "git=${GITHUB_SHA}"
+            echo "workflow_run=${GITHUB_RUN_ID}"
+            echo 'classification=RUNTIME_TAKEOVER_IDENTITY_CONTRACT_PASS'
+            echo 'payload_kind=REPRESENTATIVE_AROS_ALLOCATIONS'
+            echo 'real_kernel_payload_binding=NOT_ATTEMPTED'
+            echo 'transition_entry_execute=NOT_ATTEMPTED'
+            echo 'mmu_mutation=NOT_ATTEMPTED'
+            echo 'cache_mutation=NOT_ATTEMPTED'
+            echo 'linux_jump=NOT_ATTEMPTED'
+            cat out/m1-3b4b5u/BOUNDARIES.txt
+          } > out/m1-3b4b5u/RESULT.txt
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m1-3b4b5u-takeover-identity-${{ github.sha }}
+          path: |
+            out/m1-3b4b5u/RESULT.txt
+            out/m1-3b4b5u/BOUNDARIES.txt
+            out/m1-3b4b5u/RUNTIME_PROVENANCE.txt
+            out/m1-3b4b5u/aros-root/m68kdeb-5u-report.txt
+            out/m1-3b4b5u/fs-uae.stdout.log
+            out/m1-3b4b5u/logs/
+            out/m1-3b4b5u/screenshots/
+          retention-days: 14
