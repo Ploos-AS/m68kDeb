@@ -1,0 +1,74 @@
+name: M1.3b.4b.5k physical descriptor binding
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'loader/aros/m68kdeb-68030-physread.c'
+      - 'loader/aros/m68kdeb-68030-physread.h'
+      - 'loader/aros/m68kdeb-68030-evidence.c'
+      - 'loader/aros/m68kdeb-68030-evidence.h'
+      - 'loader/aros/m68kdeb-68030-descriptor.c'
+      - 'loader/aros/m68kdeb-68030-descriptor.h'
+      - 'tests/test_68030_physread.c'
+      - 'docs/M1_3B4B5K_PHYSICAL_DESCRIPTOR_BINDING.md'
+      - '.github/workflows/m1_3b4b5k-physical-descriptor-binding.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build and run host binding tests
+        run: |
+          mkdir -p out/m1-3b4b5k
+          cc -std=c99 -O2 -Wall -Wextra -Werror \
+            tests/test_68030_physread.c \
+            loader/aros/m68kdeb-68030-physread.c \
+            loader/aros/m68kdeb-68030-evidence.c \
+            loader/aros/m68kdeb-68030-descriptor.c \
+            -o out/m1-3b4b5k/test-68030-physread
+          out/m1-3b4b5k/test-68030-physread | tee out/m1-3b4b5k/RESULT.txt
+          grep -q 'M68KDEB_68030_PHYSREAD_TEST_PASS' out/m1-3b4b5k/RESULT.txt
+
+      - name: Build binder for m68k Amiga target
+        run: |
+          docker pull amigadev/m68k-amigaos-gcc:latest
+          docker run --rm -v "$PWD:/work" -w /work \
+            amigadev/m68k-amigaos-gcc:latest sh -lc '
+              set -eu
+              CC=$(find / -type f -name "m68k-amigaos-gcc" 2>/dev/null | head -n 1)
+              test -x "$CC"
+              "$CC" -c loader/aros/m68kdeb-68030-physread.c \
+                -o out/m1-3b4b5k/m68kdeb-68030-physread.o \
+                -m68000 -Os -Wall -Wextra -Werror -noixemul
+            '
+          file out/m1-3b4b5k/m68kdeb-68030-physread.o | tee out/m1-3b4b5k/FILE.txt
+          sha256sum out/m1-3b4b5k/m68kdeb-68030-physread.o | tee out/m1-3b4b5k/SHA256SUMS
+
+      - name: Enforce reversible binding boundary
+        run: |
+          ! grep -R -n -E 'pmove|ptest|pflusha?|SuperState|m68kdeb_takeover_68030_commit' \
+            loader/aros/m68kdeb-68030-physread.c loader/aros/m68kdeb-68030-physread.h
+          ! grep -R -n -E '\(volatile[[:space:]]+.*\*\)[[:space:]]*last_descriptor_phys|\*[[:space:]]*\(.*last_descriptor_phys' \
+            loader/aros/m68kdeb-68030-physread.c loader/aros/m68kdeb-68030-physread.h
+          grep -q 'does not implement a hardware physical-memory reader' docs/M1_3B4B5K_PHYSICAL_DESCRIPTOR_BINDING.md
+          printf '%s\n' \
+            'milestone=M1.3b.4b.5k' \
+            'binding=physical-address+exact-byte-count' \
+            'direct_physical_dereference=FORBIDDEN' \
+            'mmu_mutation=FORBIDDEN' \
+            'runtime_hardware_reader=NOT_ATTEMPTED' \
+            'result=PASS' | tee out/m1-3b4b5k/CLASSIFICATION.txt
+
+      - name: Upload evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: m1-3b4b5k-physical-descriptor-binding-${{ github.sha }}
+          path: out/m1-3b4b5k/
+          retention-days: 14
