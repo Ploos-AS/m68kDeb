@@ -29,8 +29,8 @@ extern unsigned int m68kdeb_trampoline_entry_offset;
 extern unsigned int m68kdeb_trampoline_mmu_off_offset;
 extern unsigned int m68kdeb_trampoline_post_mmu_offset;
 extern unsigned int m68kdeb_trampoline_tc_zero_offset;
-extern unsigned int m68kdeb_trampoline_abi_probe_offset;
-extern unsigned int m68kdeb_trampoline_reversible_probe_offset;
+extern unsigned int m68kdeb_trampoline_abi_offset;
+extern unsigned int m68kdeb_trampoline_rev_offset;
 extern unsigned int m68kdeb_trampoline_end_offset;
 extern int m68kdeb_68030_call_transition_abi_probe(
     APTR probe, const struct m68kdeb_takeover_request *req, ULONG *capture);
@@ -86,8 +86,8 @@ static int m68kdeb_5y_offsets_valid(ULONG blob_len)
     ULONG mmu_off = (ULONG)m68kdeb_trampoline_mmu_off_offset;
     ULONG post_mmu = (ULONG)m68kdeb_trampoline_post_mmu_offset;
     ULONG tc_zero = (ULONG)m68kdeb_trampoline_tc_zero_offset;
-    ULONG abi = (ULONG)m68kdeb_trampoline_abi_probe_offset;
-    ULONG rev = (ULONG)m68kdeb_trampoline_reversible_probe_offset;
+    ULONG abi = (ULONG)m68kdeb_trampoline_abi_offset;
+    ULONG rev = (ULONG)m68kdeb_trampoline_rev_offset;
     ULONG end = (ULONG)m68kdeb_trampoline_end_offset;
 
     return entry == 0 &&
@@ -153,7 +153,7 @@ static int m68kdeb_5y_build_takeover_request(
         return M68KDEB_TAKEOVER_BAD_ALIGNMENT;
 
     blob_len = (ULONG)m68kdeb_trampoline_blob_len;
-    abi_off = (ULONG)m68kdeb_trampoline_abi_probe_offset;
+    abi_off = (ULONG)m68kdeb_trampoline_abi_offset;
     tc_zero_off = (ULONG)m68kdeb_trampoline_tc_zero_offset;
     if (!blob_len || blob_len > PAGE_SIZE || !m68kdeb_5y_offsets_valid(blob_len)) {
         Printf("M68KDEB_5Y_ERROR transition_layout\n");
@@ -221,7 +221,7 @@ static int m68kdeb_5y_build_takeover_request(
            (ULONG)trampoline_proof.logical_base + abi_off);
     Printf("transition_reversible_probe_logical=0x%08lx\n",
            (ULONG)trampoline_proof.logical_base +
-           (ULONG)m68kdeb_trampoline_reversible_probe_offset);
+           (ULONG)m68kdeb_trampoline_rev_offset);
     Printf("transition_end_logical=0x%08lx\n",
            (ULONG)trampoline_proof.logical_base +
            (ULONG)m68kdeb_trampoline_end_offset);
