@@ -1,0 +1,185 @@
+name: M1.3b.4b.5v transition ABI qualification
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'loader/aros/m68kdeb-takeover-68030-trampoline.S'
+      - 'loader/aros/m68kdeb-68030-transition-abi-call.S'
+      - 'loader/aros/m68kdeb-68030-transition-abi-runtime.c'
+      - 'loader/aros/m68kdeb-68030-mmu-state.S'
+      - 'loader/aros/m68kdeb-68030-mmu-state.h'
+      - 'loader/aros/m68kdeb-68030-identity-window.c'
+      - 'loader/aros/m68kdeb-68030-identity-window.h'
+      - 'loader/aros/m68kdeb-physwin.c'
+      - 'loader/aros/m68kdeb-physwin.h'
+      - 'loader/aros/m68kdeb-takeover.h'
+      - 'ci/fs-uae/prepare-m1_3b4b5v-transition-abi.sh'
+      - 'ci/fs-uae/m1_3b4b5v_aros_a1200_transition_abi.fs-uae'
+      - 'docs/M1_3B4B5V_TRANSITION_ABI.md'
+      - '.github/workflows/m1_3b4b5v-transition-abi.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ca-certificates curl file fs-uae scrot unzip xvfb xorriso xz-utils lhasa
+
+      - name: Build and statically qualify ABI probe
+        run: |
+          mkdir -p out/m1-3b4b5v
+          docker pull amigadev/m68k-amigaos-gcc:latest
+          docker run --rm -v "$PWD:/work" -w /work amigadev/m68k-amigaos-gcc:latest sh -lc '
+            set -eu
+            CC=$(find / -type f -name "m68k-amigaos-gcc" 2>/dev/null | head -n 1)
+            NM=$(find / -type f -name "m68k-amigaos-nm" 2>/dev/null | head -n 1)
+            OBJCOPY=$(find / -type f -name "m68k-amigaos-objcopy" 2>/dev/null | head -n 1)
+            OBJDUMP=$(find / -type f -name "m68k-amigaos-objdump" 2>/dev/null | head -n 1)
+            "$CC" -x assembler-with-cpp -c loader/aros/m68kdeb-takeover-68030-trampoline.S -o out/m1-3b4b5v/trampoline.o -m68030 -m68851
+            "$NM" -n out/m1-3b4b5v/trampoline.o > out/m1-3b4b5v/trampoline.nm
+            "$OBJDUMP" -r out/m1-3b4b5v/trampoline.o > out/m1-3b4b5v/trampoline.relocs.txt
+            "$OBJDUMP" -d out/m1-3b4b5v/trampoline.o > out/m1-3b4b5v/trampoline.disasm.txt
+            "$OBJCOPY" -O binary -j .text out/m1-3b4b5v/trampoline.o out/m1-3b4b5v/trampoline.bin
+          '
+          ! grep -Eq '^[[:space:]]*[0-9a-fA-F]+[[:space:]]+R_' out/m1-3b4b5v/trampoline.relocs.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          nm = Path('out/m1-3b4b5v/trampoline.nm').read_text().splitlines()
+          wanted = {
+              'entry': 'm68kdeb_takeover_68030_trampoline_entry',
+              'abi': 'm68kdeb_takeover_68030_trampoline_abi_probe',
+              'rev': 'm68kdeb_takeover_68030_trampoline_reversible_probe',
+              'end': 'm68kdeb_takeover_68030_trampoline_end',
+          }
+          syms = {}
+          for line in nm:
+              p = line.split()
+              if len(p) >= 3:
+                  for key, name in wanted.items():
+                      if p[2] == name: syms[key] = int(p[0], 16)
+          assert set(syms) == set(wanted), syms
+          data = Path('out/m1-3b4b5v/trampoline.bin').read_bytes()
+          assert 0 < len(data) <= 4096
+          assert syms['entry'] == 0
+          assert syms['entry'] < syms['abi'] < syms['rev'] < syms['end'] <= len(data)
+          assert syms['end'] - syms['rev'] == 4
+          assert data[syms['rev']:syms['end']] == bytes.fromhex('70004e75')
+          abi = data[syms['abi']:syms['rev']]
+          assert abi.endswith(bytes.fromhex('70004e75'))
+          body = ','.join(f'0x{x:02x}' for x in data)
+          Path('out/m1-3b4b5v/trampoline-blob.c').write_text(
+              'unsigned char m68kdeb_trampoline_blob[]={' + body + '};\n'
+              'unsigned int m68kdeb_trampoline_blob_len=sizeof(m68kdeb_trampoline_blob);\n'
+              f"unsigned int m68kdeb_trampoline_abi_probe_offset={syms['abi']};\n")
+          Path('out/m1-3b4b5v/LAYOUT.txt').write_text(
+              f"blob_bytes={len(data)}\nabi_probe_offset={syms['abi']}\n"
+              f"reversible_probe_offset={syms['rev']}\nend_offset={syms['end']}\n")
+          PY
+          awk '/<m68kdeb_takeover_68030_trampoline_abi_probe>:/,/^$/' out/m1-3b4b5v/trampoline.disasm.txt > out/m1-3b4b5v/abi-probe.disasm.txt
+          ! grep -Eiq 'movec|pmove|pflusha|ori.*sr|jmp|bra|bsr' out/m1-3b4b5v/abi-probe.disasm.txt
+          grep -Eiq 'rts' out/m1-3b4b5v/abi-probe.disasm.txt
+          sha256sum out/m1-3b4b5v/trampoline.bin > out/m1-3b4b5v/TRAMPOLINE_SHA256SUMS
+
+      - name: Build reversible runtime probe
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work amigadev/m68k-amigaos-gcc:latest sh -lc '
+            set -eu
+            CC=$(find / -type f -name "m68k-amigaos-gcc" 2>/dev/null | head -n 1)
+            "$CC" -x assembler-with-cpp -c loader/aros/m68kdeb-68030-mmu-state.S -o out/m1-3b4b5v/mmu-state.o -m68030
+            "$CC" -x assembler-with-cpp -c loader/aros/m68kdeb-68030-transition-abi-call.S -o out/m1-3b4b5v/abi-call.o -m68030
+            "$CC" loader/aros/m68kdeb-68030-transition-abi-runtime.c \
+              loader/aros/m68kdeb-68030-identity-window.c loader/aros/m68kdeb-physwin.c \
+              out/m1-3b4b5v/trampoline-blob.c out/m1-3b4b5v/mmu-state.o out/m1-3b4b5v/abi-call.o \
+              -o out/m1-3b4b5v/m68kdeb-68030-transition-abi-runtime \
+              -m68030 -Os -Wall -Wextra -Werror -noixemul
+          '
+          strings out/m1-3b4b5v/m68kdeb-68030-transition-abi-runtime | grep -q M68KDEB_5V_TRANSITION_ABI_BOUND
+
+      - name: Enforce reversible boundary
+        run: |
+          grep -q 'transition_entry_execute=NOT_ATTEMPTED' loader/aros/m68kdeb-68030-transition-abi-runtime.c
+          grep -q 'mmu_mutation=NOT_ATTEMPTED' loader/aros/m68kdeb-68030-transition-abi-runtime.c
+          grep -q 'cache_mutation=NOT_ATTEMPTED' loader/aros/m68kdeb-68030-transition-abi-runtime.c
+          grep -q 'linux_jump=NOT_ATTEMPTED' loader/aros/m68kdeb-68030-transition-abi-runtime.c
+          ! grep -q 'm68kdeb_takeover_68030_commit(' loader/aros/m68kdeb-68030-transition-abi-runtime.c
+
+      - name: Prepare matching AROS runtime
+        run: sh ci/fs-uae/prepare-m1_3b4b5v-transition-abi.sh
+
+      - name: Qualify transition ABI under FS-UAE
+        run: |
+          set +e
+          xvfb-run -a sh -eu -c '
+            fs-uae ci/fs-uae/m1_3b4b5v_aros_a1200_transition_abi.fs-uae >out/m1-3b4b5v/fs-uae.stdout.log 2>&1 &
+            emu=$!
+            startup=0; returned=0; abi=0
+            for i in $(seq 1 180); do
+              [ -f out/m1-3b4b5v/aros-root/m1-3b4b5v-startup.marker ] && startup=1
+              [ -f out/m1-3b4b5v/aros-root/m1-3b4b5v-returned.marker ] && returned=1
+              REPORT=out/m1-3b4b5v/aros-root/m68kdeb-5v-report.txt
+              if [ -f "$REPORT" ] && grep -q "identity_rc=0" "$REPORT" && \
+                 grep -q "abi_probe_rc=0" "$REPORT" && \
+                 grep -q "M68KDEB_5V_TRANSITION_ABI_BOUND" "$REPORT" && \
+                 grep -q "M68KDEB_5V_RETURNED" "$REPORT"; then abi=1; fi
+              [ "$startup" -eq 1 ] && [ "$returned" -eq 1 ] && [ "$abi" -eq 1 ] && break
+              if ! kill -0 "$emu" 2>/dev/null; then break; fi
+              sleep 1
+            done
+            scrot out/m1-3b4b5v/screenshots/m1-3b4b5v-transition-abi.png || true
+            kill -INT "$emu" 2>/dev/null || true
+            sleep 2
+            kill -TERM "$emu" 2>/dev/null || true
+            wait "$emu" 2>/dev/null || true
+            printf "startup=%s\nreturned=%s\nabi_bound=%s\n" "$startup" "$returned" "$abi" >out/m1-3b4b5v/BOUNDARIES.txt
+            [ "$startup" -eq 1 ] && [ "$returned" -eq 1 ] && [ "$abi" -eq 1 ]
+          '
+          rc=$?
+          set -e
+          cat out/m1-3b4b5v/aros-root/m68kdeb-5v-report.txt || true
+          cat out/m1-3b4b5v/BOUNDARIES.txt || true
+          exit "$rc"
+
+      - name: Record PASS
+        run: |
+          {
+            echo 'result=PASS'
+            echo "git=${GITHUB_SHA}"
+            echo "workflow_run=${GITHUB_RUN_ID}"
+            echo 'classification=RUNTIME_TRANSITION_ABI_PASS'
+            echo 'transition_entry_execute=NOT_ATTEMPTED'
+            echo 'mmu_mutation=NOT_ATTEMPTED'
+            echo 'cache_mutation=NOT_ATTEMPTED'
+            echo 'linux_jump=NOT_ATTEMPTED'
+            cat out/m1-3b4b5v/LAYOUT.txt
+            cat out/m1-3b4b5v/BOUNDARIES.txt
+          } > out/m1-3b4b5v/RESULT.txt
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m1-3b4b5v-transition-abi-${{ github.sha }}
+          path: |
+            out/m1-3b4b5v/RESULT.txt
+            out/m1-3b4b5v/LAYOUT.txt
+            out/m1-3b4b5v/TRAMPOLINE_SHA256SUMS
+            out/m1-3b4b5v/trampoline.nm
+            out/m1-3b4b5v/trampoline.relocs.txt
+            out/m1-3b4b5v/trampoline.disasm.txt
+            out/m1-3b4b5v/abi-probe.disasm.txt
+            out/m1-3b4b5v/BOUNDARIES.txt
+            out/m1-3b4b5v/RUNTIME_PROVENANCE.txt
+            out/m1-3b4b5v/aros-root/m68kdeb-5v-report.txt
+            out/m1-3b4b5v/fs-uae.stdout.log
+            out/m1-3b4b5v/logs/
+            out/m1-3b4b5v/screenshots/
+          retention-days: 14
