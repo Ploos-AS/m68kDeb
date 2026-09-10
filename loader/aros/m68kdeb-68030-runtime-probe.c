@@ -41,13 +41,12 @@ int main(void)
         return 10;
     }
 
-    printf("M68KDEB_5N_BEFORE_TARGET_PTEST\n");
+    /* No stdio or Exec/library calls are allowed while supervisor state is active. */
     rc = m68kdeb_translate_68030_ptest((unsigned long)(uintptr_t)&probe_word,
                                        &target_psr,
                                        &target_desc_phys);
-    printf("M68KDEB_5N_AFTER_TARGET_PTEST\n");
     UserState(oldsp);
-    printf("M68KDEB_5N_AFTER_USERSTATE_TARGET\n");
+    printf("M68KDEB_5N_AFTER_TARGET_PTEST rc=%ld\n", (long)rc);
 
     if (rc != 0 || target_desc_phys == 0) {
         printf("M68KDEB_5N_TARGET_PTEST_FAIL rc=%ld desc=0x%08lx\n",
@@ -70,13 +69,12 @@ int main(void)
         return 12;
     }
 
-    printf("M68KDEB_5N_BEFORE_DESCRIPTOR_PTEST\n");
+    /* Again, PTEST is the only operation performed in supervisor state. */
     rc = m68kdeb_translate_68030_ptest(target_desc_phys,
                                        &desc_psr,
                                        &desc_desc_phys);
-    printf("M68KDEB_5N_AFTER_DESCRIPTOR_PTEST\n");
     UserState(oldsp);
-    printf("M68KDEB_5N_AFTER_USERSTATE_DESCRIPTOR\n");
+    printf("M68KDEB_5N_AFTER_DESCRIPTOR_PTEST rc=%ld\n", (long)rc);
 
     if (rc != 0) {
         printf("M68KDEB_5N_DESCRIPTOR_PTEST_FAIL rc=%ld\n", (long)rc);
