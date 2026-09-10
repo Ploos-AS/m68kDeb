@@ -13,8 +13,9 @@ The bounded reader accepts only descriptor-sized reads:
 
 The proof must state that the logical and physical addresses are identical,
 transparent translation is active for the candidate, and the admitted byte span
-matches the requested read exactly. Any mismatch fails closed before memory is
-touched.
+matches the requested read exactly.
+
+Any mismatch fails closed before memory is touched.
 
 After validation, the provider converts the already-proven logical address to a
 volatile byte pointer and copies exactly the admitted 4 or 8 bytes. It performs
