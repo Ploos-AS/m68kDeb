@@ -5,7 +5,17 @@ on:
   push:
     paths:
       - 'loader/aros/m68kdeb-loader.c'
+      - 'loader/aros/m68kdeb-layout.c'
+      - 'loader/aros/m68kdeb-layout.h'
       - 'loader/aros/m68kdeb-layout-probe.c'
+      - 'loader/aros/m68kdeb-handoff.c'
+      - 'loader/aros/m68kdeb-handoff.h'
+      - 'loader/aros/m68kdeb-takeover.c'
+      - 'loader/aros/m68kdeb-takeover.h'
+      - 'loader/aros/m68kdeb-68030-takeover-identity.c'
+      - 'loader/aros/m68kdeb-68030-takeover-identity.h'
+      - 'loader/aros/m68kdeb-68030-mmu-state.S'
+      - 'loader/aros/m68kdeb-68030-mmu-state.h'
       - 'kernel/build-amiga.sh'
       - 'initramfs/build-amiga.sh'
       - 'ci/fs-uae/fetch-aros-m68k-nightly.sh'
@@ -55,7 +65,21 @@ jobs:
               test -n "$CC" && test -x "$CC"
               echo "compiler_path=$CC" | tee /work/out/m68kdeb-loader/TOOLCHAIN.txt
               "$CC" --version | head -n 3 | tee -a /work/out/m68kdeb-loader/TOOLCHAIN.txt
-              "$CC" loader/aros/m68kdeb-loader.c \
+
+              # The production loader remains compiled for the original 68000
+              # baseline, while its read-only MC68030 TC helper is assembled
+              # separately with the ISA level required by PMOVE.
+              "$CC" -x assembler-with-cpp -c \
+                loader/aros/m68kdeb-68030-mmu-state.S \
+                -o out/m68kdeb-loader/m68kdeb-68030-mmu-state.o \
+                -m68030 -m68851
+              "$CC" \
+                loader/aros/m68kdeb-loader.c \
+                loader/aros/m68kdeb-layout.c \
+                loader/aros/m68kdeb-handoff.c \
+                loader/aros/m68kdeb-takeover.c \
+                loader/aros/m68kdeb-68030-takeover-identity.c \
+                out/m68kdeb-loader/m68kdeb-68030-mmu-state.o \
                 -o out/m68kdeb-loader/m68kdeb-loader \
                 -m68000 -Os -Wall -Wextra -noixemul
               "$CC" loader/aros/m68kdeb-layout-probe.c \
