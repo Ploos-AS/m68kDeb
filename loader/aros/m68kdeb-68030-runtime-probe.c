@@ -47,15 +47,21 @@ int main(void)
                                        &target_desc_phys);
     UserState(oldsp);
     printf("M68KDEB_5N_AFTER_TARGET_PTEST rc=%ld\n", (long)rc);
-
-    if (rc != 0 || target_desc_phys == 0) {
-        printf("M68KDEB_5N_TARGET_PTEST_FAIL rc=%ld desc=0x%08lx\n",
-               (long)rc, target_desc_phys);
-        return 11;
-    }
-
     printf("target_psr=0x%04lx\n", (unsigned long)target_psr);
     printf("target_last_descriptor_phys=0x%08lx\n", target_desc_phys);
+
+    if (rc != 0) {
+        printf("M68KDEB_5N_TARGET_PTEST_FAIL rc=%ld\n", (long)rc);
+        return 11;
+    }
+    if (target_desc_phys == 0) {
+        /* Zero is meaningful evidence: for example, a transparent/no-table
+         * result has no terminal table descriptor to bind. Fail closed, but
+         * preserve PSR so CI can classify the actual runtime translation path. */
+        printf("M68KDEB_5N_NO_TARGET_DESCRIPTOR psr=0x%04lx\n",
+               (unsigned long)target_psr);
+        return 14;
+    }
 
     /*
      * The target PTEST status does not prove that target_desc_phys itself is
