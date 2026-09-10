@@ -42,13 +42,13 @@ jobs:
       - name: Qualify non-mutating instruction boundary
         run: |
           grep -Eiq 'ptestw|ptest' out/m1-3b4b5h/DISASSEMBLY.txt
-          grep -Eiq 'pmove.*mmusr|mmusr.*pmove' out/m1-3b4b5h/DISASSEMBLY.txt
+          grep -Eiq 'pmove.*psr|psr.*pmove' out/m1-3b4b5h/DISASSEMBLY.txt
           ! grep -Ei 'pmove.*(tc|crp|srp|tt0|tt1).*\(' out/m1-3b4b5h/DISASSEMBLY.txt
           ! grep -Ei 'pflusha?|m68kdeb_takeover_68030_commit' out/m1-3b4b5h/DISASSEMBLY.txt
           grep -q 'not, by itself, the translated physical address' docs/M1_3B4B5H_68030_TRANSLATION_PROBE.md
           printf '%s\n' \
             'milestone=M1.3b.4b.5h' \
-            'probe=PTESTW+MMUSR' \
+            'probe=PTESTW+PSR' \
             'mmu_mutation=FORBIDDEN' \
             'runtime_execution=NOT_ATTEMPTED' \
             'result=PASS' | tee out/m1-3b4b5h/CLASSIFICATION.txt
