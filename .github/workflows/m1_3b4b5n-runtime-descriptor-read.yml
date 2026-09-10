@@ -1,0 +1,160 @@
+name: M1.3b.4b.5n AROS runtime descriptor read
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'loader/aros/m68kdeb-68030-runtime-probe.c'
+      - 'loader/aros/m68kdeb-translate-68030.S'
+      - 'loader/aros/m68kdeb-translate-68030.h'
+      - 'loader/aros/m68kdeb-68030-physread-tt.c'
+      - 'loader/aros/m68kdeb-68030-physread-tt.h'
+      - 'loader/aros/m68kdeb-68030-physread-tt-bounded.c'
+      - 'loader/aros/m68kdeb-68030-physread-tt-bounded.h'
+      - 'ci/fs-uae/fetch-aros-m68k-nightly.sh'
+      - 'ci/fs-uae/prepare-m1_3b4b5n-runtime-probe.sh'
+      - 'ci/fs-uae/m1_3b4b5n_aros_a1200_runtime_probe.fs-uae'
+      - 'docs/M1_3B4B5N_RUNTIME_DESCRIPTOR_READ.md'
+      - '.github/workflows/m1_3b4b5n-runtime-descriptor-read.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ca-certificates curl file fs-uae scrot unzip xvfb xorriso xz-utils lhasa
+          fs-uae --version
+          docker --version
+
+      - name: Build reversible 68030 runtime probe
+        run: |
+          mkdir -p out/m1-3b4b5n
+          docker pull amigadev/m68k-amigaos-gcc:latest
+          docker run --rm -v "$PWD:/work" -w /work \
+            amigadev/m68k-amigaos-gcc:latest sh -lc '
+              set -eu
+              CC=$(find / -type f -name "m68k-amigaos-gcc" 2>/dev/null | head -n 1)
+              OBJDUMP=$(find / -type f -name "m68k-amigaos-objdump" 2>/dev/null | head -n 1)
+              test -x "$CC"
+              test -x "$OBJDUMP"
+              "$CC" \
+                loader/aros/m68kdeb-68030-runtime-probe.c \
+                loader/aros/m68kdeb-translate-68030.S \
+                loader/aros/m68kdeb-68030-physread-tt.c \
+                loader/aros/m68kdeb-68030-physread-tt-bounded.c \
+                -o out/m1-3b4b5n/m68kdeb-68030-runtime-probe \
+                -m68030 -Os -Wall -Wextra -Werror -noixemul
+              "$OBJDUMP" -dr out/m1-3b4b5n/m68kdeb-68030-runtime-probe \
+                > out/m1-3b4b5n/DISASSEMBLY.txt
+            '
+          file out/m1-3b4b5n/m68kdeb-68030-runtime-probe | tee out/m1-3b4b5n/FILE.txt
+          strings out/m1-3b4b5n/m68kdeb-68030-runtime-probe | grep -q 'M68KDEB_5N_NOT_ADMITTED'
+          strings out/m1-3b4b5n/m68kdeb-68030-runtime-probe | grep -q 'M68KDEB_5N_BOUNDED_READ_OK'
+          sha256sum out/m1-3b4b5n/m68kdeb-68030-runtime-probe | tee out/m1-3b4b5n/SHA256SUMS
+
+      - name: Enforce reversible instruction boundary
+        run: |
+          ! grep -R -n -E 'm68kdeb_takeover_68030_commit|pflusha?|movec[^\n]*(cacr|vbr)' \
+            loader/aros/m68kdeb-68030-runtime-probe.c \
+            loader/aros/m68kdeb-translate-68030.S \
+            loader/aros/m68kdeb-68030-physread-tt.c \
+            loader/aros/m68kdeb-68030-physread-tt-bounded.c
+          ! grep -R -n -E 'pmove[^\n]*(%tc|%crp|%srp|%tt0|%tt1)|pmove[^\n]*(tc|crp|srp|tt0|tt1)' \
+            loader/aros/m68kdeb-translate-68030.S
+          grep -q 'The second PTEST is mandatory' docs/M1_3B4B5N_RUNTIME_DESCRIPTOR_READ.md
+          grep -q 'performs no descriptor dereference' docs/M1_3B4B5N_RUNTIME_DESCRIPTOR_READ.md
+
+      - name: Prepare matching AROS runtime
+        run: sh ci/fs-uae/prepare-m1_3b4b5n-runtime-probe.sh
+
+      - name: Run reversible descriptor read under FS-UAE
+        run: |
+          set +e
+          xvfb-run -a sh -eu -c '
+            fs-uae ci/fs-uae/m1_3b4b5n_aros_a1200_runtime_probe.fs-uae >out/m1-3b4b5n/fs-uae.stdout.log 2>&1 &
+            emu=$!
+            startup=0
+            returned=0
+            admitted=0
+            readok=0
+            for i in $(seq 1 180); do
+              [ -f out/m1-3b4b5n/aros-root/m1-3b4b5n-startup.marker ] && startup=1
+              [ -f out/m1-3b4b5n/aros-root/m1-3b4b5n-returned.marker ] && returned=1
+              if [ -f out/m1-3b4b5n/aros-root/m68kdeb-5n-report.txt ]; then
+                grep -q "M68KDEB_5N_TT_ADMITTED" out/m1-3b4b5n/aros-root/m68kdeb-5n-report.txt && admitted=1 || true
+                grep -q "M68KDEB_5N_BOUNDED_READ_OK" out/m1-3b4b5n/aros-root/m68kdeb-5n-report.txt && readok=1 || true
+              fi
+              [ "$startup" -eq 1 ] && [ "$returned" -eq 1 ] && [ "$admitted" -eq 1 ] && [ "$readok" -eq 1 ] && break
+              if ! kill -0 "$emu" 2>/dev/null; then break; fi
+              sleep 1
+            done
+            scrot out/m1-3b4b5n/screenshots/m1-3b4b5n-runtime.png || true
+            kill -INT "$emu" 2>/dev/null || true
+            sleep 2
+            kill -TERM "$emu" 2>/dev/null || true
+            wait "$emu" 2>/dev/null || true
+            printf "startup=%s\nreturned=%s\ntt_admitted=%s\nbounded_read=%s\n" \
+              "$startup" "$returned" "$admitted" "$readok" >out/m1-3b4b5n/BOUNDARIES.txt
+            [ "$startup" -eq 1 ] && [ "$returned" -eq 1 ] && [ "$admitted" -eq 1 ] && [ "$readok" -eq 1 ]
+          '
+          rc=$?
+          set -e
+
+          REPORT=out/m1-3b4b5n/aros-root/m68kdeb-5n-report.txt
+          cat "$REPORT" || true
+          cat out/m1-3b4b5n/BOUNDARIES.txt || true
+          tail -200 out/m1-3b4b5n/fs-uae.stdout.log || true
+
+          if [ "$rc" -eq 0 ]; then
+            printf '%s\n' \
+              'milestone=M1.3b.4b.5n' \
+              'runtime_chain=PTEST-target+PTEST-descriptor+TT-admission+bounded-read' \
+              'mmu_mutation=FORBIDDEN' \
+              'linux_jump=NOT_ATTEMPTED' \
+              'result=PASS' >out/m1-3b4b5n/CLASSIFICATION.txt
+          else
+            printf '%s\n' \
+              'milestone=M1.3b.4b.5n' \
+              'runtime_chain=NOT_QUALIFIED' \
+              'mmu_mutation=FORBIDDEN' \
+              'linux_jump=NOT_ATTEMPTED' \
+              'result=FAIL' >out/m1-3b4b5n/CLASSIFICATION.txt
+          fi
+          cat out/m1-3b4b5n/CLASSIFICATION.txt
+          exit "$rc"
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m1-3b4b5n-runtime-descriptor-read-${{ github.sha }}
+          path: |
+            out/m1-3b4b5n/BOUNDARIES.txt
+            out/m1-3b4b5n/CLASSIFICATION.txt
+            out/m1-3b4b5n/RUNTIME_PROVENANCE.txt
+            out/m1-3b4b5n/DISASSEMBLY.txt
+            out/m1-3b4b5n/FILE.txt
+            out/m1-3b4b5n/SHA256SUMS
+            out/m1-3b4b5n/ORIGINAL-Startup-Sequence
+            out/m1-3b4b5n/aros-fetch/SOURCE_URL
+            out/m1-3b4b5n/aros-fetch/SHA256SUMS
+            out/m1-3b4b5n/aros-fetch/ISO_SHA256
+            out/m1-3b4b5n/aros-root/S/Startup-Sequence
+            out/m1-3b4b5n/aros-root/m1-3b4b5n-*.marker
+            out/m1-3b4b5n/aros-root/m68kdeb-5n-report.txt
+            out/m1-3b4b5n/fs-uae.stdout.log
+            out/m1-3b4b5n/logs/
+            out/m1-3b4b5n/screenshots/
+            out/m1-3b4b5n/rom/
+          if-no-files-found: warn
+          retention-days: 14
