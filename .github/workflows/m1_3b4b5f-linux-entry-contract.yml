@@ -1,0 +1,128 @@
+name: M1.3b.4b.5f Linux entry contract
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'kernel/**'
+      - 'loader/aros/m68kdeb-takeover-68030-trampoline.S'
+      - 'docs/M1_3B4B5F_LINUX_ENTRY_CONTRACT.md'
+      - '.github/workflows/m1_3b4b5f-linux-entry-contract.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bc bison build-essential ca-certificates file flex \
+            gcc-m68k-linux-gnu libelf-dev libssl-dev make python3 xz-utils
+          docker --version
+
+      - name: Build qualified Amiga kernel
+        run: sh kernel/build-amiga.sh
+
+      - name: Build isolated transition trampoline
+        run: |
+          mkdir -p out/m1-3b4b5f
+          docker pull amigadev/m68k-amigaos-gcc:latest
+          docker run --rm -v "$PWD:/work" -w /work \
+            amigadev/m68k-amigaos-gcc:latest sh -lc '
+              set -eu
+              CC=$(find /opt/amiga -type f -name "m68k-amigaos-gcc" | head -n 1)
+              test -x "$CC"
+              "$CC" -c loader/aros/m68kdeb-takeover-68030-trampoline.S \
+                -o out/m1-3b4b5f/trampoline.o -m68030
+              NM=$(find /opt/amiga -type f -name "m68k-amigaos-nm" | head -n 1)
+              OBJDUMP=$(find /opt/amiga -type f -name "m68k-amigaos-objdump" | head -n 1)
+              "$NM" -n out/m1-3b4b5f/trampoline.o > out/m1-3b4b5f/trampoline.nm
+              "$OBJDUMP" -r out/m1-3b4b5f/trampoline.o > out/m1-3b4b5f/trampoline.reloc
+              "$OBJDUMP" -dr out/m1-3b4b5f/trampoline.o > out/m1-3b4b5f/trampoline.disasm
+            '
+
+      - name: Qualify ELF entry and bootinfo contract
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+
+          kernel = Path('out/kernel-amiga/vmlinux-m68k-amiga')
+          data = kernel.read_bytes()
+          assert data[:4] == b'\x7fELF', 'not ELF'
+          assert data[4] == 1, 'expected ELF32'
+          assert data[5] == 2, 'expected big-endian ELF'
+
+          e_entry = struct.unpack_from('>I', data, 24)[0]
+          e_phoff = struct.unpack_from('>I', data, 28)[0]
+          e_phentsize = struct.unpack_from('>H', data, 42)[0]
+          e_phnum = struct.unpack_from('>H', data, 44)[0]
+
+          loads = []
+          for i in range(e_phnum):
+              off = e_phoff + i * e_phentsize
+              p_type, p_offset, p_vaddr, p_paddr, p_filesz, p_memsz, p_flags, p_align = struct.unpack_from('>IIIIIIII', data, off)
+              if p_type == 1:
+                  loads.append((p_offset, p_vaddr, p_filesz, p_memsz, p_align))
+
+          assert loads, 'no PT_LOAD segments'
+          min_vaddr = min(v for _, v, _, _, _ in loads)
+          max_vaddr = max(v + m for _, v, _, m, _ in loads)
+          containing = [x for x in loads if x[1] <= e_entry < x[1] + x[3]]
+          assert containing, 'ELF entry not inside PT_LOAD memory span'
+          entry_offset = e_entry - min_vaddr
+          image_span = max_vaddr - min_vaddr
+
+          magic = bytes.fromhex('4249561a')
+          idx = data.find(magic)
+          assert idx >= 0, 'BOOTINFOV_MAGIC not found'
+          amiga_pair = bytes.fromhex('0000000100020000')
+          assert data.find(amiga_pair, idx, min(len(data), idx + 512)) >= 0, 'Amiga bootinfo v2.0 pair not found near bootversion table'
+
+          Path('out/m1-3b4b5f/KERNEL_ENTRY.txt').write_text(
+              f'elf_entry=0x{e_entry:08x}\n'
+              f'min_load_vaddr=0x{min_vaddr:08x}\n'
+              f'max_load_vaddr=0x{max_vaddr:08x}\n'
+              f'entry_offset={entry_offset}\n'
+              f'image_span={image_span}\n'
+              f'bootinfov_magic_file_offset={idx}\n'
+              f'amiga_bootinfo_version=0x00020000\n'
+          )
+          PY
+
+      - name: Verify trampoline remains containment-only
+        run: |
+          test ! -s out/m1-3b4b5f/trampoline.reloc || \
+            ! grep -Eq '^[[:space:]]*[0-9a-fA-F]+[[:space:]]+R_' out/m1-3b4b5f/trampoline.reloc
+          grep -q 'm68kdeb_takeover_68030_trampoline_entry' out/m1-3b4b5f/trampoline.nm
+          grep -Eqi 'pmove.*tc|tc.*pmove' out/m1-3b4b5f/trampoline.disasm
+          grep -Eqi 'pflusha' out/m1-3b4b5f/trampoline.disasm
+          if grep -Eqi '\b(jmp|jsr)\b.*(%a[0-6]|0x[0-9a-f]+)' out/m1-3b4b5f/trampoline.disasm; then
+            echo 'unexpected executable transfer in 5f trampoline' >&2
+            exit 1
+          fi
+          echo 'linux_entry_transfer=NOT_EXECUTED' > out/m1-3b4b5f/CLASSIFICATION.txt
+          echo 'result=PASS' >> out/m1-3b4b5f/CLASSIFICATION.txt
+          sha256sum out/kernel-amiga/vmlinux-m68k-amiga out/m1-3b4b5f/trampoline.o \
+            > out/m1-3b4b5f/SHA256SUMS
+
+      - name: Upload evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: m1-3b4b5f-linux-entry-${{ github.sha }}
+          path: |
+            out/m1-3b4b5f/KERNEL_ENTRY.txt
+            out/m1-3b4b5f/CLASSIFICATION.txt
+            out/m1-3b4b5f/SHA256SUMS
+            out/m1-3b4b5f/trampoline.nm
+            out/m1-3b4b5f/trampoline.reloc
+            out/m1-3b4b5f/trampoline.disasm
+          retention-days: 14
