@@ -11,6 +11,10 @@ on:
       - 'loader/aros/m68kdeb-handoff.h'
       - 'loader/aros/m68kdeb-takeover.c'
       - 'loader/aros/m68kdeb-takeover.h'
+      - 'loader/aros/m68kdeb-68030-takeover-identity.c'
+      - 'loader/aros/m68kdeb-68030-takeover-identity.h'
+      - 'loader/aros/m68kdeb-68030-mmu-state.S'
+      - 'loader/aros/m68kdeb-68030-mmu-state.h'
       - 'loader/aros/m68kdeb-takeover-68030.S'
       - 'loader/aros/m68kdeb-takeover-68030-mmuprobe.S'
       - '.github/workflows/m1_3b4b-aros-takeover-preflight.yml'
@@ -40,11 +44,18 @@ jobs:
               if [ -z "$CC" ]; then CC=$(head -n 1 /tmp/compiler-candidates.txt || true); fi
               test -n "$CC" && test -x "$CC"
               "$CC" --version | head -n 3
+
+              "$CC" -x assembler-with-cpp -c \
+                loader/aros/m68kdeb-68030-mmu-state.S \
+                -o out/m1-3b4b/m68kdeb-68030-mmu-state.o \
+                -m68030 -m68851
               "$CC" \
                 loader/aros/m68kdeb-loader.c \
                 loader/aros/m68kdeb-layout.c \
                 loader/aros/m68kdeb-handoff.c \
                 loader/aros/m68kdeb-takeover.c \
+                loader/aros/m68kdeb-68030-takeover-identity.c \
+                out/m1-3b4b/m68kdeb-68030-mmu-state.o \
                 -o out/m1-3b4b/m68kdeb-loader \
                 -m68000 -Os -Wall -Wextra -Werror \
                 -Wno-error=pointer-sign -Wno-error=int-conversion \
@@ -67,6 +78,7 @@ jobs:
       - name: Verify reversible loader and isolated takeover objects
         run: |
           strings out/m1-3b4b/m68kdeb-loader | grep -q 'M68KDEB_TAKEOVER_PREFLIGHT_OK'
+          strings out/m1-3b4b/m68kdeb-loader | grep -q 'M68KDEB_TAKEOVER_IDENTITY_OK'
           strings out/m1-3b4b/m68kdeb-loader | grep -q 'handoff=NOT_ATTEMPTED'
           if strings out/m1-3b4b/m68kdeb-loader | grep -q 'm68kdeb_takeover_68030_commit'; then
             echo 'irreversible 68030 commit path unexpectedly linked into loader' >&2
