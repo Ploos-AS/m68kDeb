@@ -20,3 +20,5 @@ It builds the already statically-qualified MC68030 trampoline as a raw `.text` b
 5r does **not** execute the copied trampoline. It does not write TC, CACR or any MMU register, does not PFLUSH, does not call the irreversible takeover commit path, and does not jump to Linux.
 
 A 5r PASS therefore proves placement and exact byte preservation only. Execution remains blocked until later milestones bind the kernel/bootinfo/initramfs placement and final entry state to the same physical-address contract.
+
+The CI workflow intentionally runs only the copy/verify probe; the embedded trampoline bytes are treated as data throughout this milestone.
