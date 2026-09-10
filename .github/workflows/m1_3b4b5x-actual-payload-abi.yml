@@ -1,0 +1,286 @@
+name: M1.3b.4b.5x actual payload ABI qualification
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'loader/aros/m68kdeb-loader.c'
+      - 'loader/aros/m68kdeb-loader-68030-abi-qual.c'
+      - 'loader/aros/m68kdeb-layout.c'
+      - 'loader/aros/m68kdeb-layout.h'
+      - 'loader/aros/m68kdeb-handoff.c'
+      - 'loader/aros/m68kdeb-handoff.h'
+      - 'loader/aros/m68kdeb-takeover.c'
+      - 'loader/aros/m68kdeb-takeover.h'
+      - 'loader/aros/m68kdeb-takeover-68030-trampoline.S'
+      - 'loader/aros/m68kdeb-68030-transition-abi-call.S'
+      - 'loader/aros/m68kdeb-68030-takeover-identity.c'
+      - 'loader/aros/m68kdeb-68030-takeover-identity.h'
+      - 'loader/aros/m68kdeb-68030-identity-window.c'
+      - 'loader/aros/m68kdeb-68030-identity-window.h'
+      - 'loader/aros/m68kdeb-68030-mmu-state.S'
+      - 'loader/aros/m68kdeb-68030-mmu-state.h'
+      - 'loader/aros/m68kdeb-physwin.c'
+      - 'loader/aros/m68kdeb-physwin.h'
+      - 'kernel/**'
+      - 'initramfs/**'
+      - 'ci/fs-uae/fetch-aros-m68k-nightly.sh'
+      - 'ci/fs-uae/prepare-m1_3b4b5x-actual-payload-abi.sh'
+      - 'ci/fs-uae/m1_3b4b5x_aros_a1200_actual_payload_abi.fs-uae'
+      - 'docs/M1_3B4B5X_ACTUAL_PAYLOAD_ABI.md'
+      - '.github/workflows/m1_3b4b5x-actual-payload-abi.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build and runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bc bison build-essential ca-certificates cpio curl file flex \
+            fs-uae gcc-m68k-linux-gnu gzip libelf-dev libssl-dev make python3 \
+            scrot unzip xvfb xorriso xz-utils lhasa
+          fs-uae --version
+          docker --version
+
+      - name: Build qualified Amiga kernel and initramfs
+        run: |
+          sh kernel/build-amiga.sh
+          sh initramfs/build-amiga.sh
+          test -s out/kernel-amiga/vmlinux-m68k-amiga
+          test -s out/initramfs-amiga/initramfs-m68kdeb.gz
+
+      - name: Build and qualify transition trampoline blob
+        run: |
+          mkdir -p out/m1-3b4b5x
+          docker pull amigadev/m68k-amigaos-gcc:latest
+          docker run --rm -v "$PWD:/work" -w /work amigadev/m68k-amigaos-gcc:latest sh -lc '
+            set -eu
+            CC=$(find / -type f -name "m68k-amigaos-gcc" 2>/dev/null | head -n 1)
+            NM=$(find / -type f -name "m68k-amigaos-nm" 2>/dev/null | head -n 1)
+            OBJCOPY=$(find / -type f -name "m68k-amigaos-objcopy" 2>/dev/null | head -n 1)
+            OBJDUMP=$(find / -type f -name "m68k-amigaos-objdump" 2>/dev/null | head -n 1)
+            test -x "$CC" && test -x "$NM" && test -x "$OBJCOPY" && test -x "$OBJDUMP"
+            "$CC" -x assembler-with-cpp -c loader/aros/m68kdeb-takeover-68030-trampoline.S \
+              -o out/m1-3b4b5x/trampoline.o -m68030 -m68851
+            "$NM" -n out/m1-3b4b5x/trampoline.o > out/m1-3b4b5x/trampoline.nm
+            "$OBJDUMP" -r out/m1-3b4b5x/trampoline.o > out/m1-3b4b5x/trampoline.relocs.txt
+            "$OBJDUMP" -d out/m1-3b4b5x/trampoline.o > out/m1-3b4b5x/trampoline.disasm.txt
+            "$OBJCOPY" -O binary -j .text out/m1-3b4b5x/trampoline.o out/m1-3b4b5x/trampoline.bin
+          '
+          ! grep -Eq '^[[:space:]]*[0-9a-fA-F]+[[:space:]]+R_' out/m1-3b4b5x/trampoline.relocs.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          nm = Path('out/m1-3b4b5x/trampoline.nm').read_text().splitlines()
+          names = {
+              'entry': 'm68kdeb_takeover_68030_trampoline_entry',
+              'abi': 'm68kdeb_takeover_68030_trampoline_abi_probe',
+              'rev': 'm68kdeb_takeover_68030_trampoline_reversible_probe',
+              'end': 'm68kdeb_takeover_68030_trampoline_end',
+          }
+          syms = {}
+          for line in nm:
+              p = line.split()
+              if len(p) >= 3:
+                  for key, name in names.items():
+                      if p[2] == name:
+                          syms[key] = int(p[0], 16)
+          assert set(syms) == set(names), syms
+          data = Path('out/m1-3b4b5x/trampoline.bin').read_bytes()
+          assert 0 < len(data) <= 4096
+          assert syms['entry'] == 0
+          assert syms['entry'] < syms['abi'] < syms['rev'] < syms['end'] <= len(data)
+          assert syms['end'] - syms['rev'] == 4
+          assert data[syms['rev']:syms['end']] == bytes.fromhex('70004e75')
+          abi = data[syms['abi']:syms['rev']]
+          assert abi.endswith(bytes.fromhex('70004e75'))
+          body = ','.join(f'0x{x:02x}' for x in data)
+          Path('out/m1-3b4b5x/trampoline-blob.c').write_text(
+              'unsigned char m68kdeb_trampoline_blob[]={' + body + '};\n'
+              'unsigned int m68kdeb_trampoline_blob_len=sizeof(m68kdeb_trampoline_blob);\n'
+              f"unsigned int m68kdeb_trampoline_abi_probe_offset={syms['abi']};\n")
+          Path('out/m1-3b4b5x/LAYOUT.txt').write_text(
+              f"blob_bytes={len(data)}\nabi_probe_offset={syms['abi']}\n"
+              f"reversible_probe_offset={syms['rev']}\nend_offset={syms['end']}\n")
+          Path('out/m1-3b4b5x/ABI_RANGE.env').write_text(
+              f"ABI_START={syms['abi']}\nABI_END={syms['rev']}\n")
+          PY
+          docker run --rm -v "$PWD:/work" -w /work amigadev/m68k-amigaos-gcc:latest sh -lc '
+            set -eu
+            . out/m1-3b4b5x/ABI_RANGE.env
+            OBJDUMP=$(find / -type f -name "m68k-amigaos-objdump" 2>/dev/null | head -n 1)
+            "$OBJDUMP" -d --start-address="$ABI_START" --stop-address="$ABI_END" \
+              out/m1-3b4b5x/trampoline.o > out/m1-3b4b5x/abi-probe.disasm.txt
+          '
+          ! grep -Eiq '\b(movec|pmove|pflusha|jmp|bra|bsr)\b|ori.*%sr' out/m1-3b4b5x/abi-probe.disasm.txt
+          grep -Eiq '\brts\b' out/m1-3b4b5x/abi-probe.disasm.txt
+          sha256sum out/m1-3b4b5x/trampoline.bin > out/m1-3b4b5x/TRAMPOLINE_SHA256SUMS
+
+      - name: Build actual-loader ABI qualifier
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work amigadev/m68k-amigaos-gcc:latest sh -lc '
+            set -eu
+            CC=$(find / -type f -name "m68k-amigaos-gcc" 2>/dev/null | head -n 1)
+            NM=$(find / -type f -name "m68k-amigaos-nm" 2>/dev/null | head -n 1)
+            "$CC" \
+              loader/aros/m68kdeb-loader-68030-abi-qual.c \
+              loader/aros/m68kdeb-layout.c \
+              loader/aros/m68kdeb-handoff.c \
+              loader/aros/m68kdeb-takeover.c \
+              loader/aros/m68kdeb-68030-takeover-identity.c \
+              loader/aros/m68kdeb-68030-identity-window.c \
+              loader/aros/m68kdeb-physwin.c \
+              loader/aros/m68kdeb-68030-mmu-state.S \
+              loader/aros/m68kdeb-68030-transition-abi-call.S \
+              out/m1-3b4b5x/trampoline-blob.c \
+              -o out/m1-3b4b5x/m68kdeb-loader-68030-abi-qual \
+              -m68030 -Os -Wall -Wextra -Werror \
+              -Wno-error=pointer-sign -Wno-error=int-conversion -noixemul
+            "$NM" out/m1-3b4b5x/m68kdeb-loader-68030-abi-qual > out/m1-3b4b5x/loader.nm
+          '
+          file out/m1-3b4b5x/m68kdeb-loader-68030-abi-qual
+          strings out/m1-3b4b5x/m68kdeb-loader-68030-abi-qual | grep -q 'M68KDEB_5X_ACTUAL_PAYLOAD_ABI_BOUND'
+          strings out/m1-3b4b5x/m68kdeb-loader-68030-abi-qual | grep -q 'handoff=NOT_ATTEMPTED'
+          ! grep -Eq '[[:space:]][Tt][[:space:]]_?m68kdeb_takeover_68030_commit$' out/m1-3b4b5x/loader.nm
+          sha256sum out/m1-3b4b5x/m68kdeb-loader-68030-abi-qual \
+            out/kernel-amiga/vmlinux-m68k-amiga \
+            out/initramfs-amiga/initramfs-m68kdeb.gz \
+            > out/m1-3b4b5x/SHA256SUMS
+
+      - name: Enforce reversible boundary
+        run: |
+          ! grep -q 'm68kdeb_takeover_68030_commit(' loader/aros/m68kdeb-loader-68030-abi-qual.c
+          grep -q '#include "m68kdeb-loader.c"' loader/aros/m68kdeb-loader-68030-abi-qual.c
+          grep -q 'm68kdeb_68030_call_transition_abi_probe' loader/aros/m68kdeb-loader-68030-abi-qual.c
+          grep -q 'transition_entry_execute=NOT_ATTEMPTED' loader/aros/m68kdeb-loader-68030-abi-qual.c
+          grep -q 'mmu_mutation=NOT_ATTEMPTED' loader/aros/m68kdeb-loader-68030-abi-qual.c
+          grep -q 'cache_mutation=NOT_ATTEMPTED' loader/aros/m68kdeb-loader-68030-abi-qual.c
+          grep -q 'linux_jump=NOT_ATTEMPTED' loader/aros/m68kdeb-loader-68030-abi-qual.c
+
+      - name: Prepare matching AROS runtime
+        run: sh ci/fs-uae/prepare-m1_3b4b5x-actual-payload-abi.sh
+
+      - name: Qualify actual payload ABI under FS-UAE
+        run: |
+          set +e
+          xvfb-run -a sh -eu -c '
+            fs-uae ci/fs-uae/m1_3b4b5x_aros_a1200_actual_payload_abi.fs-uae >out/m1-3b4b5x/fs-uae.stdout.log 2>&1 &
+            emu=$!
+            startup=0; returned=0; abi=0
+            for i in $(seq 1 240); do
+              [ -f out/m1-3b4b5x/aros-root/m1-3b4b5x-startup.marker ] && startup=1
+              [ -f out/m1-3b4b5x/aros-root/m1-3b4b5x-returned.marker ] && returned=1
+              REPORT=out/m1-3b4b5x/aros-root/m68kdeb-5x-report.txt
+              if [ -f "$REPORT" ] && \
+                 grep -q "M68KDEB_KERNEL_LOADED" "$REPORT" && \
+                 grep -q "M68KDEB_INITRAMFS_LOADED" "$REPORT" && \
+                 grep -q "abi_tc_rc=0" "$REPORT" && \
+                 grep -q "abi_tc=0x00000000" "$REPORT" && \
+                 grep -q "actual_payload_identity_rc=0" "$REPORT" && \
+                 grep -q "trampoline_identity_rc=0" "$REPORT" && \
+                 grep -q "M68KDEB_5X_TRAMPOLINE_COPY_VERIFIED" "$REPORT" && \
+                 grep -q "actual_payload_abi_rc=0" "$REPORT" && \
+                 grep -q "M68KDEB_5X_ACTUAL_PAYLOAD_ABI_BOUND" "$REPORT" && \
+                 grep -q "M68KDEB_TAKEOVER_PREFLIGHT_OK" "$REPORT" && \
+                 grep -q "handoff=NOT_ATTEMPTED" "$REPORT" && \
+                 grep -q "M68KDEB_5X_RETURNED" "$REPORT"; then abi=1; fi
+              [ "$startup" -eq 1 ] && [ "$returned" -eq 1 ] && [ "$abi" -eq 1 ] && break
+              if ! kill -0 "$emu" 2>/dev/null; then break; fi
+              sleep 1
+            done
+            scrot out/m1-3b4b5x/screenshots/m1-3b4b5x-actual-payload-abi.png || true
+            kill -INT "$emu" 2>/dev/null || true
+            sleep 2
+            kill -TERM "$emu" 2>/dev/null || true
+            wait "$emu" 2>/dev/null || true
+            printf "startup=%s\nreturned=%s\nabi_bound=%s\n" "$startup" "$returned" "$abi" >out/m1-3b4b5x/BOUNDARIES.txt
+            [ "$startup" -eq 1 ] && [ "$returned" -eq 1 ] && [ "$abi" -eq 1 ]
+          '
+          rc=$?
+          set -e
+          cat out/m1-3b4b5x/aros-root/m68kdeb-5x-report.txt || true
+          cat out/m1-3b4b5x/BOUNDARIES.txt || true
+          exit "$rc"
+
+      - name: Verify actual request capture equality
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          report = Path('out/m1-3b4b5x/aros-root/m68kdeb-5x-report.txt').read_text()
+          vals = {}
+          for line in report.splitlines():
+              if '=' in line:
+                  k, v = line.split('=', 1)
+                  vals[k] = v
+          pairs = (
+              ('actual_req_ptr', 'captured_a0'),
+              ('actual_req_entry', 'captured_a1'),
+              ('actual_req_bootinfo', 'captured_a2'),
+              ('actual_req_initramfs', 'captured_a3'),
+              ('actual_layout_logical', 'actual_layout_physical'),
+              ('actual_entry_logical', 'actual_entry_physical'),
+              ('actual_bootinfo_logical', 'actual_bootinfo_physical'),
+              ('actual_initramfs_logical', 'actual_initramfs_physical'),
+              ('abi_probe_logical', 'abi_probe_physical'),
+          )
+          for left, right in pairs:
+              a = int(vals[left], 16)
+              b = int(vals[right], 16)
+              assert a != 0
+              assert a == b, (left, right, a, b)
+          Path('out/m1-3b4b5x/ABI_EQUALITY.txt').write_text(
+              'request_a0=EXACT\nentry_a1=EXACT\nbootinfo_a2=EXACT\ninitramfs_a3=EXACT\n'
+              'payload_identity=PASS\ntrampoline_identity=PASS\n')
+          PY
+
+      - name: Record PASS
+        run: |
+          {
+            echo 'result=PASS'
+            echo "git=${GITHUB_SHA}"
+            echo "workflow_run=${GITHUB_RUN_ID}"
+            echo 'classification=RUNTIME_ACTUAL_PAYLOAD_ABI_PASS'
+            echo 'transition_entry_execute=NOT_ATTEMPTED'
+            echo 'mmu_mutation=NOT_ATTEMPTED'
+            echo 'cache_mutation=NOT_ATTEMPTED'
+            echo 'linux_jump=NOT_ATTEMPTED'
+            cat out/m1-3b4b5x/LAYOUT.txt
+            cat out/m1-3b4b5x/BOUNDARIES.txt
+            cat out/m1-3b4b5x/ABI_EQUALITY.txt
+          } > out/m1-3b4b5x/RESULT.txt
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m1-3b4b5x-actual-payload-abi-${{ github.sha }}
+          path: |
+            out/m1-3b4b5x/RESULT.txt
+            out/m1-3b4b5x/LAYOUT.txt
+            out/m1-3b4b5x/BOUNDARIES.txt
+            out/m1-3b4b5x/ABI_EQUALITY.txt
+            out/m1-3b4b5x/RUNTIME_PROVENANCE.txt
+            out/m1-3b4b5x/SHA256SUMS
+            out/m1-3b4b5x/TRAMPOLINE_SHA256SUMS
+            out/m1-3b4b5x/trampoline.nm
+            out/m1-3b4b5x/trampoline.relocs.txt
+            out/m1-3b4b5x/trampoline.disasm.txt
+            out/m1-3b4b5x/abi-probe.disasm.txt
+            out/m1-3b4b5x/loader.nm
+            out/m1-3b4b5x/aros-root/m68kdeb-5x-report.txt
+            out/m1-3b4b5x/fs-uae.stdout.log
+            out/m1-3b4b5x/logs/
+            out/m1-3b4b5x/screenshots/
+            out/m1-3b4b5x/rom/
+            out/kernel-amiga/VERSION
+            out/kernel-amiga/SOURCE_URL
+            out/initramfs-amiga/SHA256SUMS
+          if-no-files-found: warn
+          retention-days: 14
