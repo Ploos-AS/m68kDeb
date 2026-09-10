@@ -96,6 +96,12 @@ static void store_be32(UBYTE *p, ULONG v)
     p[3] = (UBYTE)v;
 }
 
+static void clear_bytes(UBYTE *p, ULONG bytes)
+{
+    while (bytes--)
+        *p++ = 0;
+}
+
 static int add_record(struct bootinfo_builder *b, UWORD tag,
                       const UBYTE *payload, ULONG payload_size)
 {
@@ -269,7 +275,7 @@ static int materialize_elf(const UBYTE *kernel, ULONG kernel_size,
             off > kernel_size || filesz > kernel_size - off)
             return 0;
         if (memsz)
-            SetMem(base + dest_off, 0, memsz);
+            clear_bytes(base + dest_off, memsz);
         if (filesz)
             CopyMem((APTR)(kernel + off), (APTR)(base + dest_off), filesz);
         Printf("layout_segment[%lu] vaddr=0x%08lx file_bytes=%lu mem_bytes=%lu dest=0x%08lx\n",
