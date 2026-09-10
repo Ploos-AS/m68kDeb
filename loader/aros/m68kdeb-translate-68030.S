@@ -6,8 +6,10 @@
  * the physical address of the last translation-table descriptor accessed; it
  * is NOT by itself the translated physical address of the tested byte.
  *
- * This object is isolated and must not be confused with the irreversible
- * takeover object.
+ * On the MC68030 the PTEST status is read through the 16-bit PMMU PSR
+ * register (the MMUSR naming/form belongs to later integrated MMUs such as
+ * the 68040).  This object is isolated and must not be confused with the
+ * irreversible takeover object.
  */
 
     .text
@@ -18,7 +20,7 @@
 /*
  * int m68kdeb_translate_68030_ptest(
  *     unsigned long logical,
- *     unsigned long *mmusr_out,
+ *     unsigned short *psr_out,
  *     unsigned long *last_descriptor_phys_out);
  *
  * Preconditions:
@@ -40,7 +42,7 @@ m68kdeb_translate_68030_ptest:
     beq.s   .Lbad
 
     ptestw  #5,(%a0),#7,%a1
-    pmove   %mmusr,(%a2)
+    pmove   %psr,(%a2)
     move.l  %a1,(%a3)
 
     moveq   #0,%d0
