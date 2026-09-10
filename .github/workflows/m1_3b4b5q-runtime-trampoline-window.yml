@@ -1,0 +1,108 @@
+name: M1.3b.4b.5q runtime trampoline identity window
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'loader/aros/m68kdeb-68030-trampoline-window-runtime.c'
+      - 'loader/aros/m68kdeb-68030-mmu-state.S'
+      - 'loader/aros/m68kdeb-68030-mmu-state.h'
+      - 'loader/aros/m68kdeb-68030-identity-window.c'
+      - 'loader/aros/m68kdeb-68030-identity-window.h'
+      - 'loader/aros/m68kdeb-physwin.c'
+      - 'loader/aros/m68kdeb-physwin.h'
+      - 'ci/fs-uae/prepare-m1_3b4b5q-trampoline-window.sh'
+      - 'ci/fs-uae/m1_3b4b5q_aros_a1200_trampoline_window.fs-uae'
+      - 'ci/fs-uae/fetch-aros-m68k-nightly.sh'
+      - 'docs/M1_3B4B5Q_RUNTIME_TRAMPOLINE_WINDOW.md'
+      - '.github/workflows/m1_3b4b5q-runtime-trampoline-window.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ca-certificates curl file fs-uae scrot unzip xvfb xorriso xz-utils lhasa
+          fs-uae --version
+          docker --version
+
+      - name: Build reversible runtime probe
+        run: |
+          mkdir -p out/m1-3b4b5q
+          docker pull amigadev/m68k-amigaos-gcc:latest
+          docker run --rm -v "$PWD:/work" -w /work amigadev/m68k-amigaos-gcc:latest sh -lc '
+            set -eu
+            CC=$(find / -type f -name "m68k-amigaos-gcc" 2>/dev/null | head -n 1)
+            test -x "$CC"
+            "$CC" -x assembler-with-cpp -c loader/aros/m68kdeb-68030-mmu-state.S -o out/m1-3b4b5q/mmu-state.o -m68030
+            "$CC" loader/aros/m68kdeb-68030-trampoline-window-runtime.c \
+              loader/aros/m68kdeb-68030-identity-window.c loader/aros/m68kdeb-physwin.c \
+              out/m1-3b4b5q/mmu-state.o \
+              -o out/m1-3b4b5q/m68kdeb-68030-trampoline-window-runtime \
+              -m68030 -Os -Wall -Wextra -Werror -noixemul
+          '
+          file out/m1-3b4b5q/m68kdeb-68030-trampoline-window-runtime
+          strings out/m1-3b4b5q/m68kdeb-68030-trampoline-window-runtime | grep -q M68KDEB_5Q_TRAMPOLINE_PAGE_ADMITTED
+
+      - name: Enforce reversible boundary
+        run: |
+          ! grep -R -n -E 'm68kdeb_takeover_68030_commit|trampoline_entry|pflusha|movec[^\n]*cacr' loader/aros/m68kdeb-68030-trampoline-window-runtime.c
+          grep -q 'trampoline_execute=NOT_ATTEMPTED' loader/aros/m68kdeb-68030-trampoline-window-runtime.c
+          grep -q 'linux_jump=NOT_ATTEMPTED' loader/aros/m68kdeb-68030-trampoline-window-runtime.c
+
+      - name: Prepare matching AROS runtime
+        run: sh ci/fs-uae/prepare-m1_3b4b5q-trampoline-window.sh
+
+      - name: Qualify allocated trampoline page under FS-UAE
+        run: |
+          set +e
+          xvfb-run -a sh -eu -c '
+            fs-uae ci/fs-uae/m1_3b4b5q_aros_a1200_trampoline_window.fs-uae >out/m1-3b4b5q/fs-uae.stdout.log 2>&1 &
+            emu=$!
+            startup=0; returned=0; admitted=0
+            for i in $(seq 1 180); do
+              [ -f out/m1-3b4b5q/aros-root/m1-3b4b5q-startup.marker ] && startup=1
+              [ -f out/m1-3b4b5q/aros-root/m1-3b4b5q-returned.marker ] && returned=1
+              if [ -f out/m1-3b4b5q/aros-root/m68kdeb-5q-report.txt ] && \
+                 grep -q "M68KDEB_5Q_TRAMPOLINE_PAGE_ADMITTED" out/m1-3b4b5q/aros-root/m68kdeb-5q-report.txt && \
+                 grep -q "M68KDEB_5Q_RETURNED" out/m1-3b4b5q/aros-root/m68kdeb-5q-report.txt; then admitted=1; fi
+              [ "$startup" -eq 1 ] && [ "$returned" -eq 1 ] && [ "$admitted" -eq 1 ] && break
+              if ! kill -0 "$emu" 2>/dev/null; then break; fi
+              sleep 1
+            done
+            scrot out/m1-3b4b5q/screenshots/m1-3b4b5q-trampoline-window.png || true
+            kill -INT "$emu" 2>/dev/null || true
+            sleep 2
+            kill -TERM "$emu" 2>/dev/null || true
+            wait "$emu" 2>/dev/null || true
+            printf "startup=%s\nreturned=%s\nadmitted=%s\n" "$startup" "$returned" "$admitted" >out/m1-3b4b5q/BOUNDARIES.txt
+            [ "$startup" -eq 1 ] && [ "$returned" -eq 1 ] && [ "$admitted" -eq 1 ]
+          '
+          rc=$?
+          set -e
+          cat out/m1-3b4b5q/aros-root/m68kdeb-5q-report.txt || true
+          cat out/m1-3b4b5q/BOUNDARIES.txt || true
+          exit "$rc"
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m1-3b4b5q-runtime-trampoline-window-${{ github.sha }}
+          path: |
+            out/m1-3b4b5q/BOUNDARIES.txt
+            out/m1-3b4b5q/RUNTIME_PROVENANCE.txt
+            out/m1-3b4b5q/aros-root/m68kdeb-5q-report.txt
+            out/m1-3b4b5q/fs-uae.stdout.log
+            out/m1-3b4b5q/logs/
+            out/m1-3b4b5q/screenshots/
+          retention-days: 14
