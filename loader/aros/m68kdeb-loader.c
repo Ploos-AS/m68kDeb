@@ -1,8 +1,8 @@
 /*
  * m68kDeb AROS/AmigaOS-compatible Linux/m68k loader
  *
- * M1.3b.4b.2: use the shared final-layout implementation and construct a
- * reversible takeover request.  No privileged takeover or kernel jump yet.
+ * M1.3b.4b.5w: construct the final payload and, on 68030, prove the exact
+ * takeover request is identity-mapped inside Exec RAM before any handoff.
  */
 
 #include <exec/execbase.h>
@@ -11,11 +11,13 @@
 #include <proto/dos.h>
 #include <proto/exec.h>
 
+#include "m68kdeb-68030-mmu-state.h"
+#include "m68kdeb-68030-takeover-identity.h"
 #include "m68kdeb-handoff.h"
 #include "m68kdeb-layout.h"
 #include "m68kdeb-takeover.h"
 
-static const char version[] = "$VER: m68kdeb-loader 0.4 (09.09.2026)";
+static const char version[] = "$VER: m68kdeb-loader 0.5 (10.09.2026)";
 
 #define BOOTINFOV_MAGIC       0x4249561aUL
 #define AMIGA_BOOTI_VERSION   0x00020000UL
@@ -221,6 +223,25 @@ static ULONG detect_fpu(UWORD attn, ULONG cpu)
     return 0;
 }
 
+static struct MemHeader *find_owner(struct ExecBase *SysBase,
+                                    ULONG base, ULONG bytes)
+{
+    struct MemHeader *mh;
+    ULONG end;
+    if (!bytes || base > 0xffffffffUL - bytes)
+        return NULL;
+    end = base + bytes;
+    for (mh = (struct MemHeader *)SysBase->MemList.lh_Head;
+         mh->mh_Node.ln_Succ != NULL;
+         mh = (struct MemHeader *)mh->mh_Node.ln_Succ) {
+        ULONG lower = (ULONG)mh->mh_Lower;
+        ULONG upper = (ULONG)mh->mh_Upper;
+        if (base >= lower && end <= upper)
+            return mh;
+    }
+    return NULL;
+}
+
 static int probe_only(struct ExecBase *SysBase)
 {
     struct MemHeader *mh;
@@ -287,10 +308,14 @@ static int load_and_build(struct ExecBase *SysBase, const char *path,
     struct m68kdeb_elf_layout elf;
     struct m68kdeb_final_layout final_layout;
     struct m68kdeb_takeover_request takeover;
+    struct m68kdeb_68030_takeover_identity_proof identity;
     struct bootinfo_builder bb;
-    struct MemHeader *mh;
+    struct MemHeader *mh, *layout_owner, *init_owner;
     static const char cmdline[] = "root=/dev/ram video=pal console=ttyS0,9600n8";
+    unsigned long tc = 0;
+    APTR oldsp;
     int preflight_rc = M68KDEB_TAKEOVER_BAD_INITRAMFS;
+    int identity_rc, tc_rc;
     int rc = 20;
 
     final_layout.raw = NULL;
@@ -390,8 +415,61 @@ static int load_and_build(struct ExecBase *SysBase, const char *path,
             goto out;
         }
         Printf("M68KDEB_TAKEOVER_PREFLIGHT_OK\n");
+
+        if (cpu == M68KDEB_CPU_68030 && mmu == M68KDEB_MMU_68030) {
+            if (takeover.layout_bytes > 0xffffffffUL - takeover.bootinfo_bytes) {
+                Printf("M68KDEB_LOADER_ERROR takeover_identity_span_overflow\n");
+                goto out;
+            }
+            layout_owner = find_owner(SysBase, takeover.layout_base,
+                                      takeover.layout_bytes + takeover.bootinfo_bytes);
+            init_owner = find_owner(SysBase, takeover.initramfs_addr,
+                                    takeover.initramfs_bytes);
+            if (!layout_owner || !init_owner) {
+                Printf("M68KDEB_LOADER_ERROR takeover_identity_owner\n");
+                goto out;
+            }
+
+            oldsp = SuperState();
+            tc_rc = m68kdeb_68030_read_tc(&tc);
+            if (oldsp) UserState(oldsp);
+            Printf("takeover_tc=0x%08lx takeover_tc_rc=%ld\n", tc, (LONG)tc_rc);
+            if (tc_rc != 0) {
+                Printf("M68KDEB_LOADER_ERROR takeover_tc rc=%ld\n", (LONG)tc_rc);
+                goto out;
+            }
+
+            identity_rc = m68kdeb_68030_takeover_identity_from_tc(
+                (uint32_t)tc, &takeover,
+                (uint32_t)(ULONG)layout_owner->mh_Lower,
+                (uint32_t)((ULONG)layout_owner->mh_Upper - (ULONG)layout_owner->mh_Lower),
+                (uint32_t)(ULONG)init_owner->mh_Lower,
+                (uint32_t)((ULONG)init_owner->mh_Upper - (ULONG)init_owner->mh_Lower),
+                &identity);
+            Printf("takeover_identity_rc=%ld\n", (LONG)identity_rc);
+            if (identity_rc != M68KDEB_68030_TAKEID_OK) {
+                Printf("M68KDEB_LOADER_ERROR takeover_identity rc=%ld\n",
+                       (LONG)identity_rc);
+                goto out;
+            }
+            Printf("takeover_layout_logical=0x%08lx takeover_layout_physical=0x%08lx bytes=%lu\n",
+                   (ULONG)identity.layout_logical, (ULONG)identity.layout_physical,
+                   (ULONG)identity.layout_plus_bootinfo_bytes);
+            Printf("takeover_entry_logical=0x%08lx takeover_entry_physical=0x%08lx\n",
+                   (ULONG)identity.entry_logical, (ULONG)identity.entry_physical);
+            Printf("takeover_bootinfo_logical=0x%08lx takeover_bootinfo_physical=0x%08lx\n",
+                   (ULONG)identity.bootinfo_logical, (ULONG)identity.bootinfo_physical);
+            Printf("takeover_initramfs_logical=0x%08lx takeover_initramfs_physical=0x%08lx bytes=%lu\n",
+                   (ULONG)identity.initramfs_logical, (ULONG)identity.initramfs_physical,
+                   (ULONG)identity.initramfs_bytes);
+            Printf("M68KDEB_TAKEOVER_IDENTITY_OK\n");
+        }
     }
 
+    Printf("transition_entry_execute=NOT_ATTEMPTED\n");
+    Printf("mmu_mutation=NOT_ATTEMPTED\n");
+    Printf("cache_mutation=NOT_ATTEMPTED\n");
+    Printf("linux_jump=NOT_ATTEMPTED\n");
     Printf("handoff=NOT_ATTEMPTED\n");
     Printf("M68KDEB_BOOTINFO_BUILD_OK\n");
     rc = 0;
