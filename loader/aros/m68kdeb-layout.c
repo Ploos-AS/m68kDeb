@@ -122,7 +122,7 @@ int m68kdeb_layout_allocate(const struct m68kdeb_elf_layout *l,
                             ULONG bootinfo_capacity,
                             struct m68kdeb_final_layout *f)
 {
-    ULONG span, alloc_size;
+    ULONG span, alloc_size, tail_bytes;
     UBYTE *raw, *base;
 
     if (!l || !f || !bootinfo_capacity || l->max_vaddr <= l->min_vaddr)
@@ -130,10 +130,20 @@ int m68kdeb_layout_allocate(const struct m68kdeb_elf_layout *l,
 
     span = l->max_vaddr - l->min_vaddr;
     if ((span & 3UL) != 0 ||
-        span > 0xffffffffUL - bootinfo_capacity - (M68KDEB_PAGE_SIZE - 1UL))
+        bootinfo_capacity > 0xffffffffUL - M68KDEB_EARLY_WORKSPACE)
+        return 0;
+    tail_bytes = bootinfo_capacity + M68KDEB_EARLY_WORKSPACE;
+    if (span > 0xffffffffUL - tail_bytes - (M68KDEB_PAGE_SIZE - 1UL))
         return 0;
 
-    alloc_size = span + bootinfo_capacity + (M68KDEB_PAGE_SIZE - 1UL);
+    /*
+     * Keep bootinfo directly after the ELF image, as required by Linux/m68k,
+     * but also own a generous early-workspace tail. Linux rounds BI_LAST up
+     * to a page and immediately uses that address for MMU tables before the
+     * permanent allocator exists. Reserving only the bootinfo page lets those
+     * writes escape the AllocMem() block during mmu_engage.
+     */
+    alloc_size = span + tail_bytes + (M68KDEB_PAGE_SIZE - 1UL);
     raw = (UBYTE *)AllocMem(alloc_size, MEMF_PUBLIC | MEMF_CLEAR);
     if (!raw)
         return 0;
