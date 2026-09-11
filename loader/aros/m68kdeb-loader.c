@@ -352,7 +352,7 @@ static int load_and_build(struct ExecBase *SysBase, const char *path,
 
     boot_first = find_owner(SysBase, (ULONG)final_layout.base,
                             final_layout.image_bytes + final_layout.bootinfo_capacity);
-    if (!boot_first) {
+    if (!boot_first || (boot_first->mh_Attributes & MEMF_PUBLIC) == 0) {
         Printf("M68KDEB_LOADER_ERROR boot_memchunk_owner\n");
         goto out;
     }
@@ -376,6 +376,7 @@ static int load_and_build(struct ExecBase *SysBase, const char *path,
          mh = (struct MemHeader *)mh->mh_Node.ln_Succ) {
         ULONG lower, upper, bytes;
         if (mh == boot_first) continue;
+        if ((mh->mh_Attributes & MEMF_PUBLIC) == 0) continue;
         lower = (ULONG)mh->mh_Lower;
         upper = (ULONG)mh->mh_Upper;
         bytes = upper - lower;
