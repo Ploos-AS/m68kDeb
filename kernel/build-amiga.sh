@@ -41,7 +41,7 @@ tar -C "$WORK" -xf "$TARBALL"
 #   L = PFLUSHA completed
 #   T = TT1/memory-start diagnostic follows
 #   M = immediately before TC enable
-#   N = TC enable returned / next instruction fetched
+#   N = mandatory post-TC long jump completed
 python3 - "$SRC/arch/m68k/kernel/head.S" <<'PY'
 from pathlib import Path
 import sys
@@ -74,10 +74,10 @@ if srp_pos < 0:
 srp_repl = "\tpmove\t%a0@,%srp\n\tputc\t'K'\n\tpflusha\n\tputc\t'L'\n"
 block = block[:srp_pos] + srp_repl + block[srp_pos + len(srp_anchor):]
 
-tc_anchor = "\tmovel\t#0x82c07760,%a0@(8)\n\tpmove\t%a0@(8),%tc\t/* enable the MMU */\n\tjmp\t1f:l\n"
+tc_anchor = "\tmovel\t#0x82c07760,%a0@(8)\n\tpmove\t%a0@(8),%tc\t/* enable the MMU */\n\tjmp\t1f:l\n1:\tmovel\t%a2,%a0@(4)\n"
 tc_pos = block.find(tc_anchor, srp_pos + len(srp_repl))
 if tc_pos < 0:
-    raise SystemExit('FAIL: 030 TC enable anchor not found')
+    raise SystemExit('FAIL: 030 TC enable/long-jump anchor not found')
 tc_repl = (
     "\tputc\t'T'\n"
     "\tputn\t%a3\n"
@@ -88,15 +88,16 @@ tc_repl = (
     "\tmovel\t#0x82c07760,%a0@(8)\n"
     "\tputc\t'M'\n"
     "\tpmove\t%a0@(8),%tc\t/* enable the MMU */\n"
-    "\tputc\t'N'\n"
     "\tjmp\t1f:l\n"
+    "1:\tputc\t'N'\n"
+    "\tmovel\t%a2,%a0@(4)\n"
 )
 block = block[:tc_pos] + tc_repl + block[tc_pos + len(tc_anchor):]
 
 text = text[:start] + block + text[end:]
 path.write_text(text)
 PY
-printf '%s\n' 'H->J(entry)->K(SRP)->L(PFLUSHA)->T(a3,a2,TT1)->M(pre-TC)->N(post-TC)' > "$OUT/MMU_68030_TRACE.txt"
+printf '%s\n' 'H->J(entry)->K(SRP)->L(PFLUSHA)->T(a3,a2,TT1)->M(pre-TC)->long-jump->N' > "$OUT/MMU_68030_TRACE.txt"
 
 make -C "$SRC" ARCH=m68k CROSS_COMPILE=m68k-linux-gnu- amiga_defconfig
 
