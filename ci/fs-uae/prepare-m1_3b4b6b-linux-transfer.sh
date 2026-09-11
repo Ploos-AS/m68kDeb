@@ -41,7 +41,7 @@ rm -f "$OUT/aros-root/m1-3b4b6b-"*.marker "$OUT/aros-root/m68kdeb-6b-report.txt"
 
 cat > "$OUT/aros-root/S/Startup-Sequence" <<'EOF'
 C:Echo "M1.3b.4b.6b Startup-Sequence reached" >SYS:m1-3b4b6b-startup.marker
-SYS:m68kdeb-loader-68030-linux-transfer-qual SYS:vmlinux-m68k-amiga SYS:initramfs-m68kdeb.gz 5 >SYS:m68kdeb-6b-report.txt
+SYS:m68kdeb-loader-68030-linux-transfer-qual SYS:vmlinux-m68k-amiga SYS:initramfs-m68kdeb.gz >SYS:m68kdeb-6b-report.txt
 C:Echo "M1.3b.4b.6b loader returned unexpectedly" >SYS:m1-3b4b6b-returned.marker
 C:Wait 300
 EOF
