@@ -229,9 +229,20 @@ static int m68kdeb_6b_build_takeover_request(
         return M68KDEB_TAKEOVER_BAD_ARGUMENT;
     }
 
+    /*
+     * MOVEC/PMOVE/PFLUSHA are privileged on MC68030. Enter supervisor state
+     * before the non-returning trampoline and mask Exec interrupts so no AROS
+     * interrupt can race the MMU/cache teardown. Linux establishes its own
+     * execution state immediately after entry.
+     */
+    Disable();
+    old_super = SuperState();
     rc = m68kdeb_68030_jump_transition_entry(
         (APTR)(trampoline_page + entry_off), req);
 
+    /* A return is failure, but restore the host state enough to report it. */
+    if (old_super) UserState(old_super);
+    Enable();
     Printf("M68KDEB_6B_UNEXPECTED_RETURN rc=%ld\n", (LONG)rc);
     Flush(Output());
     FreeMem(trampoline_raw, TRAMPOLINE_RAW_BYTES);
