@@ -47,28 +47,41 @@ import sys
 path = Path(sys.argv[1])
 text = path.read_text()
 
-def replace_once(old, new, label):
-    global text
-    count = text.count(old)
-    if count != 1:
-        raise SystemExit(f'FAIL: expected one {label} anchor, found {count}')
-    text = text.replace(old, new, 1)
+start_marker = "L(mmu_engage_030):\n"
+end_marker = "\nL(mmu_engage_040):\n"
+start = text.find(start_marker)
+if start < 0:
+    raise SystemExit('FAIL: mmu_engage_030 block start not found')
+end = text.find(end_marker, start)
+if end < 0:
+    raise SystemExit('FAIL: mmu_engage_030 block end not found')
 
-replace_once(
+block = text[start:end]
+
+def replace_block_once(old, new, label):
+    global block
+    count = block.count(old)
+    if count != 1:
+        raise SystemExit(f'FAIL: expected one {label} anchor in mmu_engage_030, found {count}')
+    block = block.replace(old, new, 1)
+
+replace_block_once(
     "L(mmu_engage_030):\n\t.chip\t68030\n",
     "L(mmu_engage_030):\n\t.chip\t68030\n\tputc\t`'J'`\n",
     "mmu_engage_030 entry",
 )
-replace_once(
+replace_block_once(
     "\tpmove\t%a0@,%srp\n\tpflusha\n",
     "\tpmove\t%a0@,%srp\n\tputc\t`'K'`\n\tpflusha\n\tputc\t`'L'`\n",
     "030 SRP/PFLUSHA",
 )
-replace_once(
+replace_block_once(
     "\tmovel\t#0x82c07760,%a0@(8)\n\tpmove\t%a0@(8),%tc\t/* enable the MMU */\n\tjmp\t1f:l\n",
     "\tmovel\t#0x82c07760,%a0@(8)\n\tputc\t`'M'`\n\tpmove\t%a0@(8),%tc\t/* enable the MMU */\n\tputc\t`'N'`\n\tjmp\t1f:l\n",
     "030 TC enable",
 )
+
+text = text[:start] + block + text[end:]
 path.write_text(text)
 PY
 printf '%s\n' 'H->J(entry)->K(SRP)->L(PFLUSHA)->M(pre-TC)->N(post-TC)' > "$OUT/MMU_68030_TRACE.txt"
