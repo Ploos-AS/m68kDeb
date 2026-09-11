@@ -1,8 +1,10 @@
 /*
  * m68kDeb AROS/AmigaOS-compatible Linux/m68k loader
  *
- * M1.3b.4b.5w: construct the final payload and, on 68030, prove the exact
- * takeover request is identity-mapped inside Exec RAM before any handoff.
+ * M1.3b.4b.6c: construct Linux bootinfo with the RAM region containing the
+ * final kernel layout first. Linux/m68k early MMU setup derives its initial
+ * mapping from the first BI_MEMCHUNK, so AROS Exec MemList order must not leak
+ * into the boot ABI.
  */
 
 #include <exec/execbase.h>
@@ -152,20 +154,17 @@ static int kernel_supports_amiga_bootinfo(const UBYTE *kernel, ULONG size,
     for (i = 0; i < l->phnum; i++) {
         ULONG p = l->phoff + (ULONG)i * (ULONG)l->phentsize;
         ULONG off, vaddr, filesz, delta, scan, scan_end;
-        if (load_be32(kernel + p) != 1UL)
-            continue;
+        if (load_be32(kernel + p) != 1UL) continue;
         off = load_be32(kernel + p + 4UL);
         vaddr = load_be32(kernel + p + 8UL);
         filesz = load_be32(kernel + p + 16UL);
         if (l->entry < vaddr) continue;
         delta = l->entry - vaddr;
-        if (delta >= filesz || off > size || filesz > size - off)
-            continue;
+        if (delta >= filesz || off > size || filesz > size - off) continue;
         scan_end = off + delta;
         for (scan = off; scan + 12UL <= scan_end; scan += 2UL) {
             ULONG q, pairs = 0;
-            if (load_be32(kernel + scan) != BOOTINFOV_MAGIC)
-                continue;
+            if (load_be32(kernel + scan) != BOOTINFOV_MAGIC) continue;
             q = scan + 4UL;
             while (q <= size - 8UL && pairs < 32UL) {
                 ULONG mach = load_be32(kernel + q);
@@ -228,16 +227,14 @@ static struct MemHeader *find_owner(struct ExecBase *SysBase,
 {
     struct MemHeader *mh;
     ULONG end;
-    if (!bytes || base > 0xffffffffUL - bytes)
-        return NULL;
+    if (!bytes || base > 0xffffffffUL - bytes) return NULL;
     end = base + bytes;
     for (mh = (struct MemHeader *)SysBase->MemList.lh_Head;
          mh->mh_Node.ln_Succ != NULL;
          mh = (struct MemHeader *)mh->mh_Node.ln_Succ) {
         ULONG lower = (ULONG)mh->mh_Lower;
         ULONG upper = (ULONG)mh->mh_Upper;
-        if (base >= lower && end <= upper)
-            return mh;
+        if (base >= lower && end <= upper) return mh;
     }
     return NULL;
 }
@@ -284,16 +281,10 @@ static UBYTE *load_public_file(const char *path, ULONG *size_out,
         return NULL;
     }
     data = (UBYTE *)AllocMem((ULONG)size_long, MEMF_PUBLIC);
-    if (!data) {
-        Close(fh);
-        return NULL;
-    }
+    if (!data) { Close(fh); return NULL; }
     got = Read(fh, data, size_long);
     Close(fh);
-    if (got != size_long) {
-        FreeMem(data, (ULONG)size_long);
-        return NULL;
-    }
+    if (got != size_long) { FreeMem(data, (ULONG)size_long); return NULL; }
     *size_out = (ULONG)size_long;
     return data;
 }
@@ -310,7 +301,7 @@ static int load_and_build(struct ExecBase *SysBase, const char *path,
     struct m68kdeb_takeover_request takeover;
     struct m68kdeb_68030_takeover_identity_proof identity;
     struct bootinfo_builder bb;
-    struct MemHeader *mh, *layout_owner, *init_owner;
+    struct MemHeader *mh, *layout_owner, *init_owner, *boot_first;
     static const char cmdline[] = "root=/dev/ram video=pal console=ttyS0,9600n8";
     unsigned long tc = 0;
     APTR oldsp;
@@ -325,21 +316,18 @@ static int load_and_build(struct ExecBase *SysBase, const char *path,
            path, (ULONG)kernel, kernel_size);
 
     if (!m68kdeb_layout_inspect_elf(kernel, kernel_size, &elf)) {
-        Printf("M68KDEB_LOADER_ERROR elf_contract\n");
-        goto out;
+        Printf("M68KDEB_LOADER_ERROR elf_contract\n"); goto out;
     }
     if (!kernel_supports_amiga_bootinfo(kernel, kernel_size, &elf,
                                         &magic_offset, &advertised_version)) {
         Printf("M68KDEB_LOADER_ERROR bootinfo_abi entry=0x%08lx advertised=0x%08lx expected=0x%08lx\n",
-               elf.entry, advertised_version, AMIGA_BOOTI_VERSION);
-        goto out;
+               elf.entry, advertised_version, AMIGA_BOOTI_VERSION); goto out;
     }
     if (!m68kdeb_layout_allocate(&elf, BOOTINFO_CAPACITY, &final_layout) ||
         !m68kdeb_layout_materialize_elf(kernel, kernel_size, &elf,
                                         final_layout.base,
                                         final_layout.image_bytes)) {
-        Printf("M68KDEB_LOADER_ERROR final_layout\n");
-        goto out;
+        Printf("M68KDEB_LOADER_ERROR final_layout\n"); goto out;
     }
 
     if (initramfs_path) {
@@ -352,44 +340,59 @@ static int load_and_build(struct ExecBase *SysBase, const char *path,
     cpu = detect_cpu(SysBase->AttnFlags);
     mmu = detect_mmu(cpu);
     fpu = detect_fpu(SysBase->AttnFlags, cpu);
-    if (!cpu || !mmu) {
-        Printf("M68KDEB_LOADER_ERROR cpu_mmu_detect cpu=0x%08lx mmu=0x%08lx\n",
-               cpu, mmu);
-        goto out;
-    }
+    if (!cpu || !mmu) { Printf("M68KDEB_LOADER_ERROR cpu_mmu_detect cpu=0x%08lx mmu=0x%08lx\n", cpu, mmu); goto out; }
 
     bb.base = final_layout.bootinfo;
     bb.used = 0;
     bb.capacity = final_layout.bootinfo_capacity;
     bb.records = 0;
     if (!add_u32(&bb, BI_MACHTYPE, MACH_AMIGA) ||
-        !add_u32(&bb, BI_CPUTYPE, cpu) ||
-        !add_u32(&bb, BI_FPUTYPE, fpu) ||
-        !add_u32(&bb, BI_MMUTYPE, mmu) ||
-        !add_u32(&bb, BI_AMIGA_MODEL, model))
+        !add_u32(&bb, BI_CPUTYPE, cpu) || !add_u32(&bb, BI_FPUTYPE, fpu) ||
+        !add_u32(&bb, BI_MMUTYPE, mmu) || !add_u32(&bb, BI_AMIGA_MODEL, model)) goto out;
+
+    boot_first = find_owner(SysBase, (ULONG)final_layout.base,
+                            final_layout.image_bytes + final_layout.bootinfo_capacity);
+    if (!boot_first) {
+        Printf("M68KDEB_LOADER_ERROR boot_memchunk_owner\n");
         goto out;
+    }
+
+    /* Linux/m68k head.S treats the first BI_MEMCHUNK as the boot memory bank. */
+    {
+        ULONG lower = (ULONG)boot_first->mh_Lower;
+        ULONG upper = (ULONG)boot_first->mh_Upper;
+        ULONG bytes = upper - lower;
+        if (!bytes || !add_addr_size(&bb, BI_MEMCHUNK, lower, bytes)) goto out;
+#ifdef MEMF_CHIP
+        if ((boot_first->mh_Attributes & MEMF_CHIP) != 0) chip_size += bytes;
+#endif
+        Printf("bootinfo_memchunk[0] lower=0x%08lx upper=0x%08lx bytes=%lu kernel_owner=1\n",
+               lower, upper, bytes);
+        regions++;
+    }
 
     for (mh = (struct MemHeader *)SysBase->MemList.lh_Head;
          mh->mh_Node.ln_Succ != NULL;
          mh = (struct MemHeader *)mh->mh_Node.ln_Succ) {
-        ULONG lower = (ULONG)mh->mh_Lower;
-        ULONG upper = (ULONG)mh->mh_Upper;
-        ULONG bytes = upper - lower;
+        ULONG lower, upper, bytes;
+        if (mh == boot_first) continue;
+        lower = (ULONG)mh->mh_Lower;
+        upper = (ULONG)mh->mh_Upper;
+        bytes = upper - lower;
         if (!bytes) continue;
         if (!add_addr_size(&bb, BI_MEMCHUNK, lower, bytes)) goto out;
 #ifdef MEMF_CHIP
         if ((mh->mh_Attributes & MEMF_CHIP) != 0) chip_size += bytes;
 #endif
+        Printf("bootinfo_memchunk[%lu] lower=0x%08lx upper=0x%08lx bytes=%lu kernel_owner=0\n",
+               regions, lower, upper, bytes);
         regions++;
     }
     if (!add_u32(&bb, BI_AMIGA_CHIP_SIZE, chip_size)) goto out;
-    if (initramfs &&
-        !add_addr_size(&bb, BI_RAMDISK, (ULONG)initramfs, initramfs_size))
-        goto out;
+    if (initramfs && !add_addr_size(&bb, BI_RAMDISK, (ULONG)initramfs, initramfs_size)) goto out;
     if (!add_string(&bb, BI_COMMAND_LINE, cmdline) ||
         !add_record(&bb, BI_LAST, NULL, 0) ||
-        !validate_bootinfo(final_layout.bootinfo, bb.used))
-        goto out;
+        !validate_bootinfo(final_layout.bootinfo, bb.used)) goto out;
 
     Printf("layout_base=0x%08lx\n", (ULONG)final_layout.base);
     Printf("layout_bytes=%lu\n", final_layout.image_bytes);
@@ -409,36 +412,22 @@ static int load_and_build(struct ExecBase *SysBase, const char *path,
         Printf("takeover_bootinfo=0x%08lx\n", takeover.bootinfo_addr);
         Printf("takeover_initramfs=0x%08lx\n", takeover.initramfs_addr);
         Printf("takeover_preflight_rc=%ld\n", (LONG)preflight_rc);
-        if (preflight_rc != M68KDEB_TAKEOVER_OK) {
-            Printf("M68KDEB_LOADER_ERROR takeover_preflight rc=%ld\n",
-                   (LONG)preflight_rc);
-            goto out;
-        }
+        if (preflight_rc != M68KDEB_TAKEOVER_OK) { Printf("M68KDEB_LOADER_ERROR takeover_preflight rc=%ld\n", (LONG)preflight_rc); goto out; }
         Printf("M68KDEB_TAKEOVER_PREFLIGHT_OK\n");
 
         if (cpu == M68KDEB_CPU_68030 && mmu == M68KDEB_MMU_68030) {
-            if (takeover.layout_bytes > 0xffffffffUL - takeover.bootinfo_bytes) {
-                Printf("M68KDEB_LOADER_ERROR takeover_identity_span_overflow\n");
-                goto out;
-            }
+            if (takeover.layout_bytes > 0xffffffffUL - takeover.bootinfo_bytes) goto out;
             layout_owner = find_owner(SysBase, takeover.layout_base,
                                       takeover.layout_bytes + takeover.bootinfo_bytes);
             init_owner = find_owner(SysBase, takeover.initramfs_addr,
                                     takeover.initramfs_bytes);
-            if (!layout_owner || !init_owner) {
-                Printf("M68KDEB_LOADER_ERROR takeover_identity_owner\n");
-                goto out;
-            }
-
+            if (!layout_owner || !init_owner) goto out;
             oldsp = SuperState();
             tc_rc = m68kdeb_68030_read_tc(&tc);
             if (oldsp) UserState(oldsp);
-            Printf("takeover_tc=0x%08lx takeover_tc_rc=%ld\n", tc, (LONG)tc_rc);
-            if (tc_rc != 0) {
-                Printf("M68KDEB_LOADER_ERROR takeover_tc rc=%ld\n", (LONG)tc_rc);
-                goto out;
-            }
-
+            Printf("takeover_tc_rc=%ld\n", (LONG)tc_rc);
+            Printf("takeover_tc=0x%08lx\n", tc);
+            if (tc_rc != 0) goto out;
             identity_rc = m68kdeb_68030_takeover_identity_from_tc(
                 (uint32_t)tc, &takeover,
                 (uint32_t)(ULONG)layout_owner->mh_Lower,
@@ -447,35 +436,18 @@ static int load_and_build(struct ExecBase *SysBase, const char *path,
                 (uint32_t)((ULONG)init_owner->mh_Upper - (ULONG)init_owner->mh_Lower),
                 &identity);
             Printf("takeover_identity_rc=%ld\n", (LONG)identity_rc);
-            if (identity_rc != M68KDEB_68030_TAKEID_OK) {
-                Printf("M68KDEB_LOADER_ERROR takeover_identity rc=%ld\n",
-                       (LONG)identity_rc);
-                goto out;
-            }
-            Printf("takeover_layout_logical=0x%08lx takeover_layout_physical=0x%08lx bytes=%lu\n",
-                   (ULONG)identity.layout_logical, (ULONG)identity.layout_physical,
-                   (ULONG)identity.layout_plus_bootinfo_bytes);
-            Printf("takeover_entry_logical=0x%08lx takeover_entry_physical=0x%08lx\n",
-                   (ULONG)identity.entry_logical, (ULONG)identity.entry_physical);
-            Printf("takeover_bootinfo_logical=0x%08lx takeover_bootinfo_physical=0x%08lx\n",
-                   (ULONG)identity.bootinfo_logical, (ULONG)identity.bootinfo_physical);
-            Printf("takeover_initramfs_logical=0x%08lx takeover_initramfs_physical=0x%08lx bytes=%lu\n",
-                   (ULONG)identity.initramfs_logical, (ULONG)identity.initramfs_physical,
-                   (ULONG)identity.initramfs_bytes);
+            if (identity_rc != M68KDEB_68030_TAKEID_OK) goto out;
             Printf("M68KDEB_TAKEOVER_IDENTITY_OK\n");
         }
+        Flush(Output());
+        rc = m68kdeb_takeover_commit(&takeover);
+        Printf("M68KDEB_LOADER_ERROR takeover_commit_returned rc=%ld\n", (LONG)rc);
+        rc = 20;
+        goto out;
     }
-
-    Printf("transition_entry_execute=NOT_ATTEMPTED\n");
-    Printf("mmu_mutation=NOT_ATTEMPTED\n");
-    Printf("cache_mutation=NOT_ATTEMPTED\n");
-    Printf("linux_jump=NOT_ATTEMPTED\n");
-    Printf("handoff=NOT_ATTEMPTED\n");
-    Printf("M68KDEB_BOOTINFO_BUILD_OK\n");
     rc = 0;
-
 out:
-    if (final_layout.raw) m68kdeb_layout_release(&final_layout);
+    if (final_layout.raw) m68kdeb_layout_free(&final_layout);
     if (initramfs) FreeMem(initramfs, initramfs_size);
     if (kernel) FreeMem(kernel, kernel_size);
     return rc;
@@ -484,33 +456,9 @@ out:
 int main(int argc, char **argv)
 {
     struct ExecBase *SysBase = *((struct ExecBase **)4UL);
-    const char *initramfs_path = NULL;
-    ULONG model = DEFAULT_AMIGA_MODEL;
-    LONG parsed = 0;
-
-    (void)version;
-    if (!SysBase) {
-        PutStr("M68KDEB_LOADER_ERROR sysbase=null\n");
-        return 20;
-    }
-    if (argc < 2) return probe_only(SysBase);
-
-    if (argc >= 3) {
-        if (StrToLong((STRPTR)argv[2], &parsed) > 0 && parsed > 0) {
-            model = (ULONG)parsed;
-        } else {
-            initramfs_path = argv[2];
-            if (argc >= 4) {
-                parsed = 0;
-                if (StrToLong((STRPTR)argv[3], &parsed) > 0 && parsed > 0)
-                    model = (ULONG)parsed;
-            }
-        }
-    }
-
-    Printf("M68KDEB_LOADER_START mode=final-layout-preflight\n");
-    Printf("exec_version=%lu.%lu\n", (ULONG)SysBase->LibNode.lib_Version,
-           (ULONG)SysBase->LibNode.lib_Revision);
-    Printf("attn_flags=0x%04lx\n", (ULONG)SysBase->AttnFlags);
-    return load_and_build(SysBase, argv[1], initramfs_path, model);
+    if (argc == 1) return probe_only(SysBase);
+    if (argc == 2) return load_and_build(SysBase, argv[1], NULL, DEFAULT_AMIGA_MODEL);
+    if (argc == 3) return load_and_build(SysBase, argv[1], argv[2], DEFAULT_AMIGA_MODEL);
+    Printf("usage: %s [kernel [initramfs]]\n", argv[0]);
+    return 20;
 }
