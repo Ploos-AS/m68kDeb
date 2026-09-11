@@ -58,28 +58,26 @@ if end < 0:
 
 block = text[start:end]
 
-def replace_block_once(old, new, label):
-    global block
-    count = block.count(old)
-    if count != 1:
-        raise SystemExit(f'FAIL: expected one {label} anchor in mmu_engage_030, found {count}')
-    block = block.replace(old, new, 1)
+entry_anchor = "L(mmu_engage_030):\n\t.chip\t68030\n"
+entry_pos = block.find(entry_anchor)
+if entry_pos < 0:
+    raise SystemExit('FAIL: mmu_engage_030 entry anchor not found')
+entry_repl = "L(mmu_engage_030):\n\t.chip\t68030\n\tputc\t`'J'`\n"
+block = block[:entry_pos] + entry_repl + block[entry_pos + len(entry_anchor):]
 
-replace_block_once(
-    "L(mmu_engage_030):\n\t.chip\t68030\n",
-    "L(mmu_engage_030):\n\t.chip\t68030\n\tputc\t`'J'`\n",
-    "mmu_engage_030 entry",
-)
-replace_block_once(
-    "\tmovel\t#0x0808,%d0\n\tmovec\t%d0,%cacr\n\tpmove\t%a0@,%srp\n\tpflusha\n",
-    "\tmovel\t#0x0808,%d0\n\tmovec\t%d0,%cacr\n\tpmove\t%a0@,%srp\n\tputc\t`'K'`\n\tpflusha\n\tputc\t`'L'`\n",
-    "first 030 SRP/PFLUSHA",
-)
-replace_block_once(
-    "\tmovel\t#0x82c07760,%a0@(8)\n\tpmove\t%a0@(8),%tc\t/* enable the MMU */\n\tjmp\t1f:l\n",
-    "\tmovel\t#0x82c07760,%a0@(8)\n\tputc\t`'M'`\n\tpmove\t%a0@(8),%tc\t/* enable the MMU */\n\tputc\t`'N'`\n\tjmp\t1f:l\n",
-    "030 TC enable",
-)
+srp_anchor = "\tpmove\t%a0@,%srp\n\tpflusha\n"
+srp_pos = block.find(srp_anchor)
+if srp_pos < 0:
+    raise SystemExit('FAIL: first 030 SRP/PFLUSHA anchor not found')
+srp_repl = "\tpmove\t%a0@,%srp\n\tputc\t`'K'`\n\tpflusha\n\tputc\t`'L'`\n"
+block = block[:srp_pos] + srp_repl + block[srp_pos + len(srp_anchor):]
+
+tc_anchor = "\tpmove\t%a0@(8),%tc\t/* enable the MMU */\n\tjmp\t1f:l\n"
+tc_pos = block.find(tc_anchor, srp_pos + len(srp_repl))
+if tc_pos < 0:
+    raise SystemExit('FAIL: 030 TC enable anchor not found')
+tc_repl = "\tputc\t`'M'`\n\tpmove\t%a0@(8),%tc\t/* enable the MMU */\n\tputc\t`'N'`\n\tjmp\t1f:l\n"
+block = block[:tc_pos] + tc_repl + block[tc_pos + len(tc_anchor):]
 
 text = text[:start] + block + text[end:]
 path.write_text(text)
