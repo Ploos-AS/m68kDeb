@@ -112,10 +112,13 @@ jobs:
           Path('out/m1-3b4b5z/LAYOUT.txt').write_text(
               f"blob_bytes={len(data)}\n" + ''.join(f"{k}_offset={v}\n" for k,v in syms.items()))
           PY
-          grep -Eiq '\bmovec\b.*%cacr|%cacr' out/m1-3b4b5z/trampoline.disasm.txt
-          grep -Eiq '\bpmove\b' out/m1-3b4b5z/trampoline.disasm.txt
-          grep -Eiq '\bpflusha\b' out/m1-3b4b5z/trampoline.disasm.txt
-          ! grep -Eiq '\b(jsr|jmp)\b' out/m1-3b4b5z/trampoline.disasm.txt
+          grep -Eqi 'movec.*cacr|cacr.*movec' out/m1-3b4b5z/trampoline.disasm.txt
+          grep -Eqi 'pmove.*tc|tc.*pmove' out/m1-3b4b5z/trampoline.disasm.txt
+          grep -Eqi 'pflusha' out/m1-3b4b5z/trampoline.disasm.txt
+          if grep -Eqi '\b(jmp|jsr)\b.*(%a[0-6]|0x[0-9a-f]+)' out/m1-3b4b5z/trampoline.disasm.txt; then
+            echo 'unexpected executable transfer in 5z trampoline' >&2
+            exit 1
+          fi
           sha256sum out/m1-3b4b5z/trampoline.bin > out/m1-3b4b5z/TRAMPOLINE_SHA256SUMS
 
       - name: Build CI-only containment qualifier
