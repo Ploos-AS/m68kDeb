@@ -42,8 +42,11 @@ jobs:
           grep -Eqi 'movec.*cacr|cacr.*movec' out/m1-3b4b6a/linux-trampoline.disasm.txt
           grep -Eqi 'pmove.*tc|tc.*pmove' out/m1-3b4b6a/linux-trampoline.disasm.txt
           grep -Eqi 'pflusha' out/m1-3b4b6a/linux-trampoline.disasm.txt
-          grep -Eqi 'jmp.*%a1' out/m1-3b4b6a/linux-trampoline.disasm.txt
-          ! grep -Eqi '\b(jsr|rts|rte|rtr)\b' out/m1-3b4b6a/linux-trampoline.disasm.txt
+          grep -Eqi 'jmp.*\(?%?a1\)?' out/m1-3b4b6a/linux-trampoline.disasm.txt
+          if grep -Eqi '[[:space:]](jsr|rts|rte|rtr)([[:space:]]|$)' out/m1-3b4b6a/linux-trampoline.disasm.txt; then
+            echo 'unexpected return/call instruction in Linux transfer trampoline' >&2
+            exit 1
+          fi
           python3 - <<'PY'
           from pathlib import Path
           names = {
