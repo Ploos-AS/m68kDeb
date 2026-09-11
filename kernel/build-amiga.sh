@@ -63,21 +63,21 @@ entry_anchor = "L(mmu_engage_030):\n\t.chip\t68030\n"
 entry_pos = block.find(entry_anchor)
 if entry_pos < 0:
     raise SystemExit('FAIL: mmu_engage_030 entry anchor not found')
-entry_repl = "L(mmu_engage_030):\n\t.chip\t68030\n\tputc\t`'J'`\n"
+entry_repl = "L(mmu_engage_030):\n\t.chip\t68030\n\tputc\t'J'\n"
 block = block[:entry_pos] + entry_repl + block[entry_pos + len(entry_anchor):]
 
 srp_anchor = "\tpmove\t%a0@,%srp\n\tpflusha\n"
 srp_pos = block.find(srp_anchor)
 if srp_pos < 0:
     raise SystemExit('FAIL: first 030 SRP/PFLUSHA anchor not found')
-srp_repl = "\tpmove\t%a0@,%srp\n\tputc\t`'K'`\n\tpflusha\n\tputc\t`'L'`\n"
+srp_repl = "\tpmove\t%a0@,%srp\n\tputc\t'K'\n\tpflusha\n\tputc\t'L'\n"
 block = block[:srp_pos] + srp_repl + block[srp_pos + len(srp_anchor):]
 
 tc_anchor = "\tpmove\t%a0@(8),%tc\t/* enable the MMU */\n\tjmp\t1f:l\n"
 tc_pos = block.find(tc_anchor, srp_pos + len(srp_repl))
 if tc_pos < 0:
     raise SystemExit('FAIL: 030 TC enable anchor not found')
-tc_repl = "\tputc\t`'M'`\n\tpmove\t%a0@(8),%tc\t/* enable the MMU */\n\tputc\t`'N'`\n\tjmp\t1f:l\n"
+tc_repl = "\tputc\t'M'\n\tpmove\t%a0@(8),%tc\t/* enable the MMU */\n\tputc\t'N'\n\tjmp\t1f:l\n"
 block = block[:tc_pos] + tc_repl + block[tc_pos + len(tc_anchor):]
 
 text = text[:start] + block + text[end:]
