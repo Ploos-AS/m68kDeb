@@ -5,6 +5,12 @@
  * CACR=0, TC=0, PFLUSHA sequence under FS-UAE. This variant replaces the
  * 5z local containment loop with the one intended final transfer: JMP (a1).
  *
+ * Amiga Linux booters must also clear both 68030 transparent-translation
+ * registers before entering Linux. Leaving an AROS TT mapping behind is
+ * harmless while TC=0, but it becomes active again when Linux head.S enables
+ * its new MMU tables in mmu_engage. Clear TT0/TT1 together with TC so Linux
+ * starts from the historical Amiboot-compatible MMU state.
+ *
  * Entry register contract (qualified by 5v/5x/5y):
  *   a0 = takeover request
  *   a1 = Linux entry
@@ -33,6 +39,8 @@ m68kdeb_takeover_68030_linux_entry:
 
     lea     m68kdeb_takeover_68030_linux_tc_zero(%pc),%a0
 m68kdeb_takeover_68030_linux_mmu_off:
+    pmove   (%a0),%tt0
+    pmove   (%a0),%tt1
     pmove   (%a0),%tc
 
 m68kdeb_takeover_68030_linux_post_mmu:
