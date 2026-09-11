@@ -1,0 +1,19 @@
+[fs-uae]
+amiga_model = A1200
+cpu = 68030
+kickstart_file = out/m1-3b4b5aa/rom/aros-rom.bin
+kickstart_ext_file = out/m1-3b4b5aa/rom/aros-ext.bin
+uae_cpu_speed = real
+zorro_iii_memory = 65536
+hard_drive_0 = out/m1-3b4b5aa/aros-root
+hard_drive_0_label = System
+hard_drive_0_read_only = 0
+fullscreen = 0
+window_width = 752
+window_height = 576
+logs_dir = out/m1-3b4b5aa/logs
+screenshots_dir = out/m1-3b4b5aa/screenshots
+
+# M1.3b.4b.5aa is CI/emulator-only. It executes the same qualified transition
+# boundary as 5z and then transfers to the actual materialized Linux entry.
+# Production loader integration remains forbidden in this milestone.
