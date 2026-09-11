@@ -46,49 +46,30 @@ import sys
 
 path = Path(sys.argv[1])
 text = path.read_text()
-needle = '''L(mmu_engage_030):
-\t.chip\t68030
-\tlea\t%pc@(L(mmu_engage_030_temp)),%a0
-\tmovel\t#0x80000002,%a0@
-\tmovel\t%a3,%a0@(4)
-\tmovel\t#0x0808,%d0
-\tmovec\t%d0,%cacr
-\tpmove\t%a0@,%srp
-\tpflusha
-\t/*
-\t * enable,super root enable,4096 byte pages,7 bit root index,
-\t * 7 bit pointer index, 6 bit page table index.
-\t */
-\tmovel\t#0x82c07760,%a0@(8)
-\tpmove\t%a0@(8),%tc\t\t/* enable the MMU */
-\tjmp\t1f:l
-'''
-replacement = '''L(mmu_engage_030):
-\t.chip\t68030
-\tputc\t`'J'`
-\tlea\t%pc@(L(mmu_engage_030_temp)),%a0
-\tmovel\t#0x80000002,%a0@
-\tmovel\t%a3,%a0@(4)
-\tmovel\t#0x0808,%d0
-\tmovec\t%d0,%cacr
-\tpmove\t%a0@,%srp
-\tputc\t`'K'`
-\tpflusha
-\tputc\t`'L'`
-\t/*
-\t * enable,super root enable,4096 byte pages,7 bit root index,
-\t * 7 bit pointer index, 6 bit page table index.
-\t */
-\tmovel\t#0x82c07760,%a0@(8)
-\tputc\t`'M'`
-\tpmove\t%a0@(8),%tc\t\t/* enable the MMU */
-\tputc\t`'N'`
-\tjmp\t1f:l
-'''
-count = text.count(needle)
-if count != 1:
-    raise SystemExit(f'FAIL: expected one 68030 mmu_engage block, found {count}')
-path.write_text(text.replace(needle, replacement, 1))
+
+def replace_once(old, new, label):
+    global text
+    count = text.count(old)
+    if count != 1:
+        raise SystemExit(f'FAIL: expected one {label} anchor, found {count}')
+    text = text.replace(old, new, 1)
+
+replace_once(
+    "L(mmu_engage_030):\n\t.chip\t68030\n",
+    "L(mmu_engage_030):\n\t.chip\t68030\n\tputc\t`'J'`\n",
+    "mmu_engage_030 entry",
+)
+replace_once(
+    "\tpmove\t%a0@,%srp\n\tpflusha\n",
+    "\tpmove\t%a0@,%srp\n\tputc\t`'K'`\n\tpflusha\n\tputc\t`'L'`\n",
+    "030 SRP/PFLUSHA",
+)
+replace_once(
+    "\tmovel\t#0x82c07760,%a0@(8)\n\tpmove\t%a0@(8),%tc\t/* enable the MMU */\n\tjmp\t1f:l\n",
+    "\tmovel\t#0x82c07760,%a0@(8)\n\tputc\t`'M'`\n\tpmove\t%a0@(8),%tc\t/* enable the MMU */\n\tputc\t`'N'`\n\tjmp\t1f:l\n",
+    "030 TC enable",
+)
+path.write_text(text)
 PY
 printf '%s\n' 'H->J(entry)->K(SRP)->L(PFLUSHA)->M(pre-TC)->N(post-TC)' > "$OUT/MMU_68030_TRACE.txt"
 
