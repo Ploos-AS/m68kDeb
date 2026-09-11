@@ -9,6 +9,8 @@ on:
       - 'ci/fs-uae/m1_3b4b6b_aros_a1200_linux_transfer.fs-uae'
       - 'ci/fs-uae/prepare-m1_3b4b6b-linux-transfer.sh'
       - 'loader/aros/m68kdeb-loader-68030-linux-transfer-qual.c'
+      - 'loader/aros/m68kdeb-layout.c'
+      - 'loader/aros/m68kdeb-layout.h'
       - 'loader/aros/m68kdeb-takeover-68030-linux-trampoline.S'
       - 'loader/aros/m68kdeb-68030-transition-entry-call.S'
       - 'loader/aros/m68kdeb-68030-takeover-identity.c'
