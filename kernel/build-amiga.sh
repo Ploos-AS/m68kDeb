@@ -71,9 +71,9 @@ replace_block_once(
     "mmu_engage_030 entry",
 )
 replace_block_once(
-    "\tpmove\t%a0@,%srp\n\tpflusha\n",
-    "\tpmove\t%a0@,%srp\n\tputc\t`'K'`\n\tpflusha\n\tputc\t`'L'`\n",
-    "030 SRP/PFLUSHA",
+    "\tmovel\t#0x0808,%d0\n\tmovec\t%d0,%cacr\n\tpmove\t%a0@,%srp\n\tpflusha\n",
+    "\tmovel\t#0x0808,%d0\n\tmovec\t%d0,%cacr\n\tpmove\t%a0@,%srp\n\tputc\t`'K'`\n\tpflusha\n\tputc\t`'L'`\n",
+    "first 030 SRP/PFLUSHA",
 )
 replace_block_once(
     "\tmovel\t#0x82c07760,%a0@(8)\n\tpmove\t%a0@(8),%tc\t/* enable the MMU */\n\tjmp\t1f:l\n",
