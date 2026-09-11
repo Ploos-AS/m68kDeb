@@ -15,6 +15,7 @@ command -v tar >/dev/null
 command -v make >/dev/null
 command -v m68k-linux-gnu-gcc >/dev/null
 command -v sha256sum >/dev/null
+command -v python3 >/dev/null
 
 rm -rf "$WORK" "$OUT"
 mkdir -p "$WORK" "$OUT"
@@ -29,6 +30,67 @@ if [ "$ACTUAL_SHA256" != "$LINUX_SHA256" ]; then
 fi
 printf '%s  %s\n' "$ACTUAL_SHA256" "$(basename "$TARBALL")" > "$OUT/linux-source.SHA256"
 tar -C "$WORK" -xf "$TARBALL"
+
+# M1.3b.4b.6c diagnostic: make the 68030 MMU engage sequence observable on
+# the existing early serial channel. H is emitted immediately before the
+# mmu_engage call by upstream head.S. These additional markers isolate the
+# irreversible 68030 transition without changing the mappings themselves:
+#   J = entered mmu_engage_030
+#   K = SRP loaded
+#   L = PFLUSHA completed
+#   M = immediately before TC enable
+#   N = TC enable returned / next instruction fetched
+python3 - "$SRC/arch/m68k/kernel/head.S" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+needle = '''L(mmu_engage_030):
+\t.chip\t68030
+\tlea\t%pc@(L(mmu_engage_030_temp)),%a0
+\tmovel\t#0x80000002,%a0@
+\tmovel\t%a3,%a0@(4)
+\tmovel\t#0x0808,%d0
+\tmovec\t%d0,%cacr
+\tpmove\t%a0@,%srp
+\tpflusha
+\t/*
+\t * enable,super root enable,4096 byte pages,7 bit root index,
+\t * 7 bit pointer index, 6 bit page table index.
+\t */
+\tmovel\t#0x82c07760,%a0@(8)
+\tpmove\t%a0@(8),%tc\t\t/* enable the MMU */
+\tjmp\t1f:l
+'''
+replacement = '''L(mmu_engage_030):
+\t.chip\t68030
+\tputc\t`'J'`
+\tlea\t%pc@(L(mmu_engage_030_temp)),%a0
+\tmovel\t#0x80000002,%a0@
+\tmovel\t%a3,%a0@(4)
+\tmovel\t#0x0808,%d0
+\tmovec\t%d0,%cacr
+\tpmove\t%a0@,%srp
+\tputc\t`'K'`
+\tpflusha
+\tputc\t`'L'`
+\t/*
+\t * enable,super root enable,4096 byte pages,7 bit root index,
+\t * 7 bit pointer index, 6 bit page table index.
+\t */
+\tmovel\t#0x82c07760,%a0@(8)
+\tputc\t`'M'`
+\tpmove\t%a0@(8),%tc\t\t/* enable the MMU */
+\tputc\t`'N'`
+\tjmp\t1f:l
+'''
+count = text.count(needle)
+if count != 1:
+    raise SystemExit(f'FAIL: expected one 68030 mmu_engage block, found {count}')
+path.write_text(text.replace(needle, replacement, 1))
+PY
+printf '%s\n' 'H->J(entry)->K(SRP)->L(PFLUSHA)->M(pre-TC)->N(post-TC)' > "$OUT/MMU_68030_TRACE.txt"
 
 make -C "$SRC" ARCH=m68k CROSS_COMPILE=m68k-linux-gnu- amiga_defconfig
 
