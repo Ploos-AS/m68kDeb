@@ -1,6 +1,7 @@
 #!/bin/sh
 set -eu
 
+# CI retrigger: validate index-based 68030 MMU instrumentation in 6b runtime.
 LINUX_VERSION=${LINUX_VERSION:-7.2.4}
 LINUX_SHA256=${LINUX_SHA256:-01710ee01737dac492f1bae52becd057e08d20d11589089aa06accff415c28dd}
 JOBS=${JOBS:-2}
