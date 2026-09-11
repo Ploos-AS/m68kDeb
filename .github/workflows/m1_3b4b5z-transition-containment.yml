@@ -1,0 +1,240 @@
+name: M1.3b.4b.5z transition containment
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'loader/aros/m68kdeb-loader.c'
+      - 'loader/aros/m68kdeb-loader-68030-containment-qual.c'
+      - 'loader/aros/m68kdeb-68030-transition-entry-call.S'
+      - 'loader/aros/m68kdeb-68030-transition-abi-call.S'
+      - 'loader/aros/m68kdeb-takeover-68030-trampoline.S'
+      - 'loader/aros/m68kdeb-layout.c'
+      - 'loader/aros/m68kdeb-layout.h'
+      - 'loader/aros/m68kdeb-handoff.c'
+      - 'loader/aros/m68kdeb-handoff.h'
+      - 'loader/aros/m68kdeb-takeover.c'
+      - 'loader/aros/m68kdeb-takeover.h'
+      - 'loader/aros/m68kdeb-68030-takeover-identity.c'
+      - 'loader/aros/m68kdeb-68030-takeover-identity.h'
+      - 'loader/aros/m68kdeb-68030-identity-window.c'
+      - 'loader/aros/m68kdeb-68030-identity-window.h'
+      - 'loader/aros/m68kdeb-68030-mmu-state.S'
+      - 'loader/aros/m68kdeb-68030-mmu-state.h'
+      - 'loader/aros/m68kdeb-physwin.c'
+      - 'loader/aros/m68kdeb-physwin.h'
+      - 'kernel/**'
+      - 'initramfs/**'
+      - 'ci/fs-uae/fetch-aros-m68k-nightly.sh'
+      - 'ci/fs-uae/prepare-m1_3b4b5z-transition-containment.sh'
+      - 'ci/fs-uae/m1_3b4b5z_aros_a1200_transition_containment.fs-uae'
+      - 'docs/M1_3B4B5Z_TRANSITION_CONTAINMENT.md'
+      - '.github/workflows/m1_3b4b5z-transition-containment.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build and runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bc bison build-essential ca-certificates cpio curl file flex \
+            fs-uae gcc-m68k-linux-gnu gzip libelf-dev libssl-dev make python3 \
+            scrot unzip xvfb xorriso xz-utils lhasa
+          fs-uae --version
+          docker --version
+
+      - name: Build qualified Amiga kernel and initramfs
+        run: |
+          sh kernel/build-amiga.sh
+          sh initramfs/build-amiga.sh
+          test -s out/kernel-amiga/vmlinux-m68k-amiga
+          test -s out/initramfs-amiga/initramfs-m68kdeb.gz
+
+      - name: Build exact transition trampoline blob
+        run: |
+          mkdir -p out/m1-3b4b5z
+          docker pull amigadev/m68k-amigaos-gcc:latest
+          docker run --rm -v "$PWD:/work" -w /work amigadev/m68k-amigaos-gcc:latest sh -lc '
+            set -eu
+            CC=$(find / -type f -name "m68k-amigaos-gcc" 2>/dev/null | head -n 1)
+            NM=$(find / -type f -name "m68k-amigaos-nm" 2>/dev/null | head -n 1)
+            OBJCOPY=$(find / -type f -name "m68k-amigaos-objcopy" 2>/dev/null | head -n 1)
+            OBJDUMP=$(find / -type f -name "m68k-amigaos-objdump" 2>/dev/null | head -n 1)
+            "$CC" -x assembler-with-cpp -c loader/aros/m68kdeb-takeover-68030-trampoline.S \
+              -o out/m1-3b4b5z/trampoline.o -m68030 -m68851
+            "$NM" -n out/m1-3b4b5z/trampoline.o > out/m1-3b4b5z/trampoline.nm
+            "$OBJDUMP" -r out/m1-3b4b5z/trampoline.o > out/m1-3b4b5z/trampoline.relocs.txt
+            "$OBJDUMP" -d out/m1-3b4b5z/trampoline.o > out/m1-3b4b5z/trampoline.disasm.txt
+            "$OBJCOPY" -O binary -j .text out/m1-3b4b5z/trampoline.o out/m1-3b4b5z/trampoline.bin
+          '
+          ! grep -Eq '^[[:space:]]*[0-9a-fA-F]+[[:space:]]+R_' out/m1-3b4b5z/trampoline.relocs.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          names = {
+              'entry': 'm68kdeb_takeover_68030_trampoline_entry',
+              'mmu_off': 'm68kdeb_takeover_68030_trampoline_mmu_off',
+              'post_mmu': 'm68kdeb_takeover_68030_trampoline_post_mmu',
+              'tc_zero': 'm68kdeb_takeover_68030_trampoline_tc_zero',
+              'abi': 'm68kdeb_takeover_68030_trampoline_abi_probe',
+              'rev': 'm68kdeb_takeover_68030_trampoline_reversible_probe',
+              'end': 'm68kdeb_takeover_68030_trampoline_end',
+          }
+          syms = {}
+          for line in Path('out/m1-3b4b5z/trampoline.nm').read_text().splitlines():
+              p = line.split()
+              if len(p) >= 3:
+                  for key, name in names.items():
+                      if p[2] == name:
+                          syms[key] = int(p[0], 16)
+          assert set(syms) == set(names), syms
+          data = Path('out/m1-3b4b5z/trampoline.bin').read_bytes()
+          assert 0 < len(data) <= 4096
+          assert syms['entry'] == 0
+          assert syms['entry'] < syms['mmu_off'] < syms['post_mmu'] < syms['tc_zero']
+          assert syms['tc_zero'] + 4 <= syms['abi'] < syms['rev'] < syms['end'] <= len(data)
+          assert data[syms['tc_zero']:syms['tc_zero']+4] == b'\x00\x00\x00\x00'
+          assert data[syms['rev']:syms['end']] == bytes.fromhex('70004e75')
+          body = ','.join(f'0x{x:02x}' for x in data)
+          fields = ''.join(
+              f'unsigned int m68kdeb_trampoline_{key}_offset={value};\n'
+              for key, value in syms.items())
+          Path('out/m1-3b4b5z/trampoline-blob.c').write_text(
+              'unsigned char m68kdeb_trampoline_blob[]={' + body + '};\n'
+              'unsigned int m68kdeb_trampoline_blob_len=sizeof(m68kdeb_trampoline_blob);\n' + fields)
+          Path('out/m1-3b4b5z/LAYOUT.txt').write_text(
+              f"blob_bytes={len(data)}\n" + ''.join(f"{k}_offset={v}\n" for k,v in syms.items()))
+          PY
+          grep -Eiq '\bmovec\b.*%cacr|%cacr' out/m1-3b4b5z/trampoline.disasm.txt
+          grep -Eiq '\bpmove\b' out/m1-3b4b5z/trampoline.disasm.txt
+          grep -Eiq '\bpflusha\b' out/m1-3b4b5z/trampoline.disasm.txt
+          ! grep -Eiq '\b(jsr|jmp)\b' out/m1-3b4b5z/trampoline.disasm.txt
+          sha256sum out/m1-3b4b5z/trampoline.bin > out/m1-3b4b5z/TRAMPOLINE_SHA256SUMS
+
+      - name: Build CI-only containment qualifier
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work amigadev/m68k-amigaos-gcc:latest sh -lc '
+            set -eu
+            CC=$(find / -type f -name "m68k-amigaos-gcc" 2>/dev/null | head -n 1)
+            NM=$(find / -type f -name "m68k-amigaos-nm" 2>/dev/null | head -n 1)
+            "$CC" \
+              loader/aros/m68kdeb-loader-68030-containment-qual.c \
+              loader/aros/m68kdeb-layout.c loader/aros/m68kdeb-handoff.c \
+              loader/aros/m68kdeb-takeover.c \
+              loader/aros/m68kdeb-68030-takeover-identity.c \
+              loader/aros/m68kdeb-68030-identity-window.c \
+              loader/aros/m68kdeb-physwin.c loader/aros/m68kdeb-68030-mmu-state.S \
+              loader/aros/m68kdeb-68030-transition-abi-call.S \
+              loader/aros/m68kdeb-68030-transition-entry-call.S \
+              out/m1-3b4b5z/trampoline-blob.c \
+              -o out/m1-3b4b5z/m68kdeb-loader-68030-containment-qual \
+              -m68030 -Os -Wall -Wextra -Werror \
+              -Wno-error=pointer-sign -Wno-error=int-conversion -noixemul
+            "$NM" out/m1-3b4b5z/m68kdeb-loader-68030-containment-qual > out/m1-3b4b5z/loader.nm
+          '
+          strings out/m1-3b4b5z/m68kdeb-loader-68030-containment-qual | grep -q 'M68KDEB_5Z_TRANSITION_ARMED'
+          strings out/m1-3b4b5z/m68kdeb-loader-68030-containment-qual | grep -q 'M68KDEB_5Z_UNEXPECTED_RETURN'
+          ! grep -Eq '[[:space:]][Tt][[:space:]]_?m68kdeb_takeover_68030_commit$' out/m1-3b4b5z/loader.nm
+          grep -Eq '[[:space:]][Tt][[:space:]]_?m68kdeb_68030_jump_transition_entry$' out/m1-3b4b5z/loader.nm
+
+      - name: Enforce containment boundary
+        run: |
+          ! grep -q 'm68kdeb_takeover_68030_commit(' loader/aros/m68kdeb-loader-68030-containment-qual.c
+          grep -q 'm68kdeb_68030_call_transition_abi_probe' loader/aros/m68kdeb-loader-68030-containment-qual.c
+          grep -q 'm68kdeb_68030_jump_transition_entry' loader/aros/m68kdeb-loader-68030-containment-qual.c
+          grep -q 'linux_jump=NOT_ATTEMPTED' loader/aros/m68kdeb-loader-68030-containment-qual.c
+          grep -q 'M68KDEB_5Z_UNEXPECTED_RETURN' loader/aros/m68kdeb-loader-68030-containment-qual.c
+
+      - name: Prepare matching AROS runtime
+        run: sh ci/fs-uae/prepare-m1_3b4b5z-transition-containment.sh
+
+      - name: Qualify non-returning transition containment under FS-UAE
+        run: |
+          set +e
+          xvfb-run -a sh -eu -c '
+            fs-uae ci/fs-uae/m1_3b4b5z_aros_a1200_transition_containment.fs-uae >out/m1-3b4b5z/fs-uae.stdout.log 2>&1 &
+            emu=$!
+            startup=0; armed=0; returned=0; alive_after=0
+            for i in $(seq 1 240); do
+              [ -f out/m1-3b4b5z/aros-root/m1-3b4b5z-startup.marker ] && startup=1
+              [ -f out/m1-3b4b5z/aros-root/m1-3b4b5z-transition-armed.marker ] && { armed=1; break; }
+              [ -f out/m1-3b4b5z/aros-root/m1-3b4b5z-returned.marker ] && { returned=1; break; }
+              if ! kill -0 "$emu" 2>/dev/null; then break; fi
+              sleep 1
+            done
+            if [ "$armed" -eq 1 ]; then
+              for i in $(seq 1 12); do
+                if [ -f out/m1-3b4b5z/aros-root/m1-3b4b5z-returned.marker ]; then returned=1; break; fi
+                if ! kill -0 "$emu" 2>/dev/null; then break; fi
+                sleep 1
+              done
+              if kill -0 "$emu" 2>/dev/null; then alive_after=1; fi
+            fi
+            scrot out/m1-3b4b5z/screenshots/m1-3b4b5z-transition-containment.png || true
+            kill -INT "$emu" 2>/dev/null || true
+            sleep 2
+            kill -TERM "$emu" 2>/dev/null || true
+            wait "$emu" 2>/dev/null || true
+            printf "startup=%s\narmed=%s\nreturned=%s\nalive_after_containment=%s\n" \
+              "$startup" "$armed" "$returned" "$alive_after" >out/m1-3b4b5z/BOUNDARIES.txt
+            [ "$startup" -eq 1 ] && [ "$armed" -eq 1 ] && \
+              [ "$returned" -eq 0 ] && [ "$alive_after" -eq 1 ]
+          '
+          rc=$?
+          set -e
+          cat out/m1-3b4b5z/aros-root/m68kdeb-5z-report.txt || true
+          cat out/m1-3b4b5z/BOUNDARIES.txt || true
+          exit "$rc"
+
+      - name: Verify armed evidence and no Linux transfer
+        run: |
+          grep -q 'M1.3b.4b.5z transition armed' out/m1-3b4b5z/aros-root/m1-3b4b5z-transition-armed.marker
+          grep -q 'containment_tc_rc=0' out/m1-3b4b5z/aros-root/m68kdeb-5z-report.txt
+          grep -q 'containment_tc=0x00000000' out/m1-3b4b5z/aros-root/m68kdeb-5z-report.txt
+          grep -q 'actual_payload_identity_rc=0' out/m1-3b4b5z/aros-root/m68kdeb-5z-report.txt
+          grep -q 'trampoline_identity_rc=0' out/m1-3b4b5z/aros-root/m68kdeb-5z-report.txt
+          grep -q 'actual_payload_abi_rc=0' out/m1-3b4b5z/aros-root/m68kdeb-5z-report.txt
+          grep -q 'M68KDEB_5Z_TRAMPOLINE_COPY_VERIFIED' out/m1-3b4b5z/aros-root/m68kdeb-5z-report.txt
+          grep -q 'transition_entry_transfer=ARMED' out/m1-3b4b5z/aros-root/m68kdeb-5z-report.txt
+          grep -q 'linux_jump=NOT_ATTEMPTED' out/m1-3b4b5z/aros-root/m68kdeb-5z-report.txt
+          grep -q 'M68KDEB_5Z_TRANSITION_ARMED' out/m1-3b4b5z/aros-root/m68kdeb-5z-report.txt
+          ! grep -q 'M68KDEB_5Z_UNEXPECTED_RETURN' out/m1-3b4b5z/aros-root/m68kdeb-5z-report.txt
+          ! test -e out/m1-3b4b5z/aros-root/m1-3b4b5z-returned.marker
+
+      - name: Record containment PASS
+        run: |
+          {
+            echo 'M1.3b.4b.5z transition containment: PASS'
+            echo 'scope=FS-UAE CI only'
+            echo 'evidence=actual payload identity + copied exact transition + ABI + armed marker + bounded non-return'
+            echo 'linux_jump=NOT_ATTEMPTED'
+            echo 'privileged_instruction_completion=NOT_HOST_OBSERVABLE'
+            cat out/m1-3b4b5z/BOUNDARIES.txt
+          } > out/m1-3b4b5z/QUALIFICATION.txt
+          cat out/m1-3b4b5z/QUALIFICATION.txt
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m1-3b4b5z-transition-containment
+          path: |
+            out/m1-3b4b5z/BOUNDARIES.txt
+            out/m1-3b4b5z/QUALIFICATION.txt
+            out/m1-3b4b5z/RUNTIME_PROVENANCE.txt
+            out/m1-3b4b5z/LAYOUT.txt
+            out/m1-3b4b5z/TRAMPOLINE_SHA256SUMS
+            out/m1-3b4b5z/trampoline.disasm.txt
+            out/m1-3b4b5z/trampoline.relocs.txt
+            out/m1-3b4b5z/loader.nm
+            out/m1-3b4b5z/aros-root/m68kdeb-5z-report.txt
+            out/m1-3b4b5z/aros-root/m1-3b4b5z-transition-armed.marker
+            out/m1-3b4b5z/fs-uae.stdout.log
+            out/m1-3b4b5z/screenshots/
