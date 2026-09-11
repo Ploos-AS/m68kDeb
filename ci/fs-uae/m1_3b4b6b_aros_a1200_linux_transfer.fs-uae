@@ -1,0 +1,20 @@
+[fs-uae]
+amiga_model = A1200
+cpu = 68030
+kickstart_file = out/m1-3b4b6b/rom/aros-rom.bin
+kickstart_ext_file = out/m1-3b4b6b/rom/aros-ext.bin
+uae_cpu_speed = real
+zorro_iii_memory = 65536
+hard_drive_0 = out/m1-3b4b6b/aros-root
+hard_drive_0_label = System
+hard_drive_0_read_only = 0
+serial_port = tcp://127.0.0.1:12345
+fullscreen = 0
+window_width = 752
+window_height = 576
+logs_dir = out/m1-3b4b6b/logs
+screenshots_dir = out/m1-3b4b6b/screenshots
+
+# M1.3b.4b.6b is CI/emulator-only. After the full identity/copy gate it
+# executes the isolated 6a transfer trampoline and jumps to the real Linux
+# entry. The Linux serial console is captured through FS-UAE's TCP serial port.
