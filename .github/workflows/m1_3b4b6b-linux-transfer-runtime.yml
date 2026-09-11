@@ -1,0 +1,110 @@
+name: M1.3b.4b.6b Linux transfer runtime
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/m1_3b4b6b-linux-transfer-runtime.yml'
+      - 'ci/fs-uae/m1_3b4b6b_aros_a1200_linux_transfer.fs-uae'
+      - 'ci/fs-uae/prepare-m1_3b4b6b-linux-transfer.sh'
+      - 'loader/aros/m68kdeb-loader-68030-linux-transfer-qual.c'
+      - 'loader/aros/m68kdeb-takeover-68030-linux-trampoline.S'
+      - 'loader/aros/m68kdeb-68030-transition-entry-call.S'
+      - 'loader/aros/m68kdeb-68030-takeover-identity.c'
+      - 'loader/aros/m68kdeb-68030-takeover-identity.h'
+      - 'kernel/build-amiga.sh'
+      - 'initramfs/build-amiga.sh'
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install host dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            fs-uae curl unzip xorriso netcat-openbsd \
+            gcc-m68k-linux-gnu binutils-m68k-linux-gnu \
+            cpio gzip make python3
+
+      - name: Build Amiga Linux kernel artifact
+        run: sh kernel/build-amiga.sh
+
+      - name: Build installer initramfs
+        run: sh initramfs/build-amiga.sh
+
+      - name: Build 6b qualification loader
+        run: |
+          test -f Makefile
+          make m1_3b4b6b-linux-transfer
+
+      - name: Prepare AROS FS-UAE runtime
+        run: sh ci/fs-uae/prepare-m1_3b4b6b-linux-transfer.sh
+
+      - name: Capture serial and run FS-UAE
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out/m1-3b4b6b/logs
+          : > out/m1-3b4b6b/serial.log
+
+          fs-uae ci/fs-uae/m1_3b4b6b_aros_a1200_linux_transfer.fs-uae \
+            >out/m1-3b4b6b/fs-uae.stdout.log \
+            2>out/m1-3b4b6b/fs-uae.stderr.log &
+          emu_pid=$!
+
+          for _ in $(seq 1 60); do
+            if nc -z 127.0.0.1 12345; then
+              break
+            fi
+            if ! kill -0 "$emu_pid" 2>/dev/null; then
+              echo 'FS-UAE exited before serial port became available' >&2
+              wait "$emu_pid" || true
+              exit 1
+            fi
+            sleep 1
+          done
+
+          timeout 240 nc 127.0.0.1 12345 > out/m1-3b4b6b/serial.log || true
+          kill "$emu_pid" 2>/dev/null || true
+          wait "$emu_pid" 2>/dev/null || true
+
+      - name: Qualify Linux userspace handoff
+        shell: bash
+        run: |
+          set -euo pipefail
+          report=out/m1-3b4b6b/aros-root/m68kdeb-6b-report.txt
+          serial=out/m1-3b4b6b/serial.log
+          returned=out/m1-3b4b6b/aros-root/m1-3b4b6b-returned.marker
+          armed=out/m1-3b4b6b/aros-root/m1-3b4b6b-linux-transfer-armed.marker
+
+          test -f "$report"
+          test -f "$armed"
+          test ! -e "$returned"
+          grep -Fq 'M68KDEB_6B_LINUX_TRANSFER_ARMED' "$report"
+          grep -Fq 'm68kDeb installer bootstrap' "$serial"
+          grep -Fq 'M1.3 bootstrap reached userspace.' "$serial"
+
+          echo 'PASS: M1.3b.4b.6b Linux transfer reached installer initramfs userspace'
+
+      - name: Upload qualification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m1-3b4b6b-linux-transfer-evidence
+          if-no-files-found: warn
+          path: |
+            out/m1-3b4b6b/serial.log
+            out/m1-3b4b6b/fs-uae.stdout.log
+            out/m1-3b4b6b/fs-uae.stderr.log
+            out/m1-3b4b6b/RUNTIME_PROVENANCE.txt
+            out/m1-3b4b6b/aros-root/m68kdeb-6b-report.txt
+            out/m1-3b4b6b/aros-root/m1-3b4b6b-linux-transfer-armed.marker
