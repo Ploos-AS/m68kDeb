@@ -4,6 +4,12 @@
 #include <exec/types.h>
 
 #define M68KDEB_PAGE_SIZE 4096UL
+/*
+ * Linux/m68k uses the first page after BI_LAST as its early memory_start and
+ * allocates MMU tables there before the permanent allocator is available.
+ * Keep this space owned by the loader until the non-returning takeover.
+ */
+#define M68KDEB_EARLY_WORKSPACE (1024UL * 1024UL)
 
 struct m68kdeb_elf_layout {
     ULONG phoff;
