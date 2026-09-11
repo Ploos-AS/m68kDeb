@@ -40,7 +40,6 @@ jobs:
         run: |
           ! grep -Eq '^[[:space:]]*[0-9a-fA-F]+[[:space:]]+R_' out/m1-3b4b6a/linux-trampoline.relocs.txt
           grep -Eqi 'movec.*cacr|cacr.*movec' out/m1-3b4b6a/linux-trampoline.disasm.txt
-          grep -Eqi 'pmove.*tc|tc.*pmove' out/m1-3b4b6a/linux-trampoline.disasm.txt
           grep -Eqi 'pflusha' out/m1-3b4b6a/linux-trampoline.disasm.txt
           grep -Eqi 'jmp.*\(?%?a1\)?' out/m1-3b4b6a/linux-trampoline.disasm.txt
           if grep -Eqi '[[:space:]](jsr|rts|rte|rtr)([[:space:]]|$)' out/m1-3b4b6a/linux-trampoline.disasm.txt; then
@@ -71,8 +70,18 @@ jobs:
           assert 0 < len(data) <= 4096
           assert syms['end'] <= len(data)
           assert data[syms['tc_zero']:syms['tc_zero']+4] == b'\x00\x00\x00\x00'
+
+          # Bebbo binutils currently fails to disassemble 68030 PMOVE TT0/TT1/TC
+          # reliably, so qualify the exact emitted opcodes instead. The sequence
+          # is: pmove (a0),tt0 ; pmove (a0),tt1 ; pmove (a0),tc.
+          mmu_teardown = data[syms['mmu_off']:syms['post_mmu']]
+          expected_teardown = bytes.fromhex('f0100800 f0100c00 f0104000')
+          assert mmu_teardown == expected_teardown, (
+              mmu_teardown.hex(), expected_teardown.hex())
+
           Path('out/m1-3b4b6a/CONTRACT.txt').write_text(
               'linux_jump=STATIC_ONLY\n' +
+              'mmu_teardown=TT0_ZERO,TT1_ZERO,TC_ZERO\n' +
               f'blob_bytes={len(data)}\n' +
               ''.join(f'{k}_offset={v}\n' for k,v in syms.items()))
           PY
@@ -81,7 +90,7 @@ jobs:
       - name: Record PASS
         run: |
           cat out/m1-3b4b6a/CONTRACT.txt
-          echo 'M1.3b.4b.6a PASS: relocation-free CACR=0 -> TC=0 -> PFLUSHA -> JMP(a1); runtime Linux transfer not attempted.'
+          echo 'M1.3b.4b.6a PASS: relocation-free CACR=0 -> TT0=0 -> TT1=0 -> TC=0 -> PFLUSHA -> JMP(a1); runtime Linux transfer not attempted.'
 
       - name: Upload evidence
         if: always()
