@@ -48,7 +48,7 @@ path = Path(sys.argv[1])
 text = path.read_text()
 
 start_marker = "L(mmu_engage_030):\n"
-end_marker = "\nL(mmu_engage_040):\n"
+end_marker = "\nL(mmu_engage_cleanup):\n"
 start = text.find(start_marker)
 if start < 0:
     raise SystemExit('FAIL: mmu_engage_030 block start not found')
