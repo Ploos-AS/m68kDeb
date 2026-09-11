@@ -115,6 +115,8 @@ jobs:
             CC=$(find / -type f -name "m68k-amigaos-gcc" 2>/dev/null | head -n 1)
             NM=$(find / -type f -name "m68k-amigaos-nm" 2>/dev/null | head -n 1)
             "$CC" \
+              -Dm68kdeb_takeover_commit=m68kdeb_takeover_68030_prepare \
+              -Dm68kdeb_layout_free=m68kdeb_layout_release \
               loader/aros/m68kdeb-loader-68030-linux-transfer-qual.c \
               loader/aros/m68kdeb-layout.c loader/aros/m68kdeb-handoff.c \
               loader/aros/m68kdeb-takeover.c \
