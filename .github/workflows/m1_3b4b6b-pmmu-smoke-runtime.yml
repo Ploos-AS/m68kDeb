@@ -56,7 +56,7 @@ jobs:
           docker run --rm -v "$PWD:/work" -w /work amigadev/m68k-amigaos-gcc:latest sh -lc '
             set -eu
             CC=$(find / -type f -name "m68k-amigaos-gcc" 2>/dev/null | head -n 1)
-            "$CC" loader/aros/m68kdeb-68030-pmmu-smoke-qual.c out/m1-3b4b6b-pmmu/smoke-blob.c -o out/m1-3b4b6b-pmmu/m68kdeb-68030-pmmu-smoke-qual -m68030 -Os -Wall -Wextra -Werror -noixemul
+            "$CC" loader/aros/m68kdeb-68030-pmmu-smoke-qual.c out/m1-3b4b6b-pmmu/smoke-blob.c -o out/m1-3b4b6b-pmmu/m68kdeb-68030-pmmu-smoke-qual -m68030 -Os -Wall -Wextra -Werror -Wno-error=pointer-sign -noixemul
           '
 
       - name: Prepare AROS FS-UAE runtime
