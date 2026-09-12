@@ -1,0 +1,18 @@
+[fs-uae]
+amiga_model = A1200
+cpu = 68030
+kickstart_file = out/m1-3b4b6b-pmmu/rom/aros-rom.bin
+kickstart_ext_file = out/m1-3b4b6b-pmmu/rom/aros-ext.bin
+uae_cpu_speed = real
+zorro_iii_memory = 65536
+hard_drive_0 = out/m1-3b4b6b-pmmu/aros-root
+hard_drive_0_label = System
+hard_drive_0_read_only = 0
+fullscreen = 0
+window_width = 752
+window_height = 576
+logs_dir = out/m1-3b4b6b-pmmu/logs
+screenshots_dir = out/m1-3b4b6b-pmmu/screenshots
+
+# Isolated from Linux: the guest only enables the 68030 PMMU over one
+# identity-mapped trampoline page, disables it again, and returns to AROS.
