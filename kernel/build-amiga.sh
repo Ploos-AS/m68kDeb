@@ -48,7 +48,7 @@ if count != 1:
     raise SystemExit(f'FAIL: expected one 68030 Amiga Zorro III TT1 mapping, found {count}')
 text = text.replace(
     anchor,
-    "\t/* m68kDeb 6b.8 diagnostic: 68030 Zorro III TT1 suppressed */\n",
+    "\t/* m68kDeb 6b.9 diagnostic: 68030 Zorro III TT1 suppressed */\n",
     1,
 )
 path.write_text(text)
@@ -57,11 +57,15 @@ printf '%s\n' 'disabled: Amiga 68030 Zorro III TT1 0x40000000/0x20000000' > "$OU
 
 # Instrument the 68030 MMU engage sequence. Everything below runs while the
 # MMU is still disabled until M.  S dumps the exact 64-bit SRP descriptor
-# image and the TC value Linux is about to load.  R dumps the translation path
-# for the mandatory post-TC long-jump target, including both raw descriptors
-# and the table/page bases encoded in them:
+# image and the TC value Linux is about to load.  R walks the temporary mapping
+# for the linked/logical long-jump target.  P independently walks the mapping
+# for the current PC-relative/physical long-jump target.  The latter identity
+# mapping is critical: immediately after PMOVE enables TC the CPU must fetch
+# the JMP instruction at the still-physical PC before the long jump can switch
+# execution to its linked/logical address.
 #   S <srp-hi> <srp-lo> <tc>
-#   R <pc> <root-raw> <root-base> <ptr-raw> <ptr-base> <pte-raw> <pte-base>
+#   R <logical-pc> <root-raw> <root-base> <ptr-raw> <ptr-base> <pte-raw> <pte-base>
+#   P <physical-pc> <root-raw> <root-base> <ptr-raw> <ptr-base> <pte-raw> <pte-base>
 # The indices are those encoded by TC=0x82c07760: 7/7/6 bits, 4K pages.
 python3 - "$SRC/arch/m68k/kernel/head.S" <<'PY'
 from pathlib import Path
@@ -115,7 +119,7 @@ tc_repl = (
     "\tputn\t%d0\n"
     "\tmovel\t#0x82c07760,%d0\n"
     "\tputn\t%d0\n"
-    # Dump raw descriptors and the address portions used at each level.
+    # Walk the mapping for the linked/logical post-TC target.
     "\tputc\t'R'\n"
     "\tmovel\t#1f,%a1\n"
     "\tputn\t%a1\n"
@@ -146,6 +150,42 @@ tc_repl = (
     "\tmovel\t%d1,%d0\n"
     "\tandl\t#0xfffff000,%d0\n"
     "\tputn\t%d0\n"
+    # Walk the second alias created by mmu_temp_map: the current physical
+    # address must identity-map so the first instruction fetch after PMOVE TC
+    # can reach the mandatory long JMP.  PC-relative LEA gives that runtime
+    # physical address while the MMU is still disabled.
+    "\tputc\t'P'\n"
+    "\tlea\t%pc@(1f),%a1\n"
+    "\tputn\t%a1\n"
+    "\tmovel\t%a1,%d0\n"
+    "\tmoveq\t#ROOT_INDEX_SHIFT,%d1\n"
+    "\tlsrl\t%d1,%d0\n"
+    "\tandl\t#ROOT_TABLE_SIZE-1,%d0\n"
+    "\tmovel\t%a3@(%d0*4),%d1\n"
+    "\tputn\t%d1\n"
+    "\tandw\t#-ROOT_TABLE_SIZE,%d1\n"
+    "\tputn\t%d1\n"
+    "\tmovel\t%d1,%a1\n"
+    "\tlea\t%pc@(1f),%a0\n"
+    "\tmovel\t%a0,%d0\n"
+    "\tmoveq\t#PTR_INDEX_SHIFT,%d1\n"
+    "\tlsrl\t%d1,%d0\n"
+    "\tandl\t#PTR_TABLE_SIZE-1,%d0\n"
+    "\tmovel\t%a1@(%d0*4),%d1\n"
+    "\tputn\t%d1\n"
+    "\tandw\t#-PTR_TABLE_SIZE,%d1\n"
+    "\tputn\t%d1\n"
+    "\tmovel\t%d1,%a1\n"
+    "\tmovel\t%a0,%d0\n"
+    "\tmoveq\t#PAGE_INDEX_SHIFT,%d1\n"
+    "\tlsrl\t%d1,%d0\n"
+    "\tandl\t#PAGE_TABLE_SIZE-1,%d0\n"
+    "\tmovel\t%a1@(%d0*4),%d1\n"
+    "\tputn\t%d1\n"
+    "\tmovel\t%d1,%d0\n"
+    "\tandl\t#0xfffff000,%d0\n"
+    "\tputn\t%d0\n"
+    # Restore the mmu_engage temporary descriptor pointer after diagnostics.
     "\tlea\t%pc@(L(mmu_engage_030_temp)),%a0\n"
     "\tmovel\t#0x82c07760,%a0@(8)\n"
     "\tputc\t'M'\n"
@@ -159,7 +199,7 @@ block = block[:tc_pos] + tc_repl + block[tc_pos + len(tc_anchor):]
 text = text[:start] + block + text[end:]
 path.write_text(text)
 PY
-printf '%s\n' 'H->J(entry)->K(SRP)->L(PFLUSHA)->T(a3,a2,TT1)->S(srp-hi,srp-lo,tc)->R(pc,root-raw,root-base,ptr-raw,ptr-base,pte-raw,pte-base)->M(pre-TC)->long-jump->N' > "$OUT/MMU_68030_TRACE.txt"
+printf '%s\n' 'H->J(entry)->K(SRP)->L(PFLUSHA)->T(a3,a2,TT1)->S(srp-hi,srp-lo,tc)->R(logical-pc,root-raw,root-base,ptr-raw,ptr-base,pte-raw,pte-base)->P(physical-pc,root-raw,root-base,ptr-raw,ptr-base,pte-raw,pte-base)->M(pre-TC)->long-jump->N' > "$OUT/MMU_68030_TRACE.txt"
 
 make -C "$SRC" ARCH=m68k CROSS_COMPILE=m68k-linux-gnu- amiga_defconfig
 
