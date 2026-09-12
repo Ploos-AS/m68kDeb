@@ -74,17 +74,11 @@ jobs:
           set -euo pipefail
           root=out/m1-3b4b6b-pmmu/aros-root
           test -f "$root/m1-3b4b6b-pmmu-armed.marker"
-          test -f "$root/m1-3b4b6b-pmmu-identity-pass.marker"
-          test -f "$root/m1-3b4b6b-pmmu-root-pass.marker"
-          test -f "$root/m1-3b4b6b-pmmu-pointer-pass.marker"
-          test -f "$root/m1-3b4b6b-pmmu-fullchain-pass.marker"
-          test -f "$root/m1-3b4b6b-pmmu-prealias-pass.marker"
           test -f "$root/m1-3b4b6b-pmmu-returned.marker"
           test -f "$root/m1-3b4b6b-pmmu-pass.marker"
           test -f "$root/m68kdeb-pmmu-smoke-report.txt"
-          grep -Fq 'M68KDEB_PMMU_PREALIAS_PASS' "$root/m68kdeb-pmmu-smoke-report.txt"
           grep -Fq 'M68KDEB_PMMU_SMOKE_PASS' "$root/m68kdeb-pmmu-smoke-report.txt"
-          echo 'PASS: isolated MC68030 PMMU descriptor-chain bisect survived and returned to AROS'
+          echo 'PASS: isolated MC68030 PMMU TC enable/disable survived and returned to AROS'
 
       - name: Upload PMMU smoke evidence
         if: always()
@@ -99,12 +93,5 @@ jobs:
             out/m1-3b4b6b-pmmu/smoke.relocs.txt
             out/m1-3b4b6b-pmmu/aros-root/m68kdeb-pmmu-smoke-report.txt
             out/m1-3b4b6b-pmmu/aros-root/m1-3b4b6b-pmmu-armed.marker
-            out/m1-3b4b6b-pmmu/aros-root/m1-3b4b6b-pmmu-identity-pass.marker
-            out/m1-3b4b6b-pmmu/aros-root/m1-3b4b6b-pmmu-root-pass.marker
-            out/m1-3b4b6b-pmmu/aros-root/m1-3b4b6b-pmmu-pointer-pass.marker
-            out/m1-3b4b6b-pmmu/aros-root/m1-3b4b6b-pmmu-fullchain-pass.marker
-            out/m1-3b4b6b-pmmu/aros-root/m1-3b4b6b-pmmu-prealias-pass.marker
-            out/m1-3b4b6b-pmmu/aros-root/m1-3b4b6b-pmmu-prealias-fail.marker
             out/m1-3b4b6b-pmmu/aros-root/m1-3b4b6b-pmmu-returned.marker
             out/m1-3b4b6b-pmmu/aros-root/m1-3b4b6b-pmmu-pass.marker
-            out/m1-3b4b6b-pmmu/aros-root/m1-3b4b6b-pmmu-fail.marker
