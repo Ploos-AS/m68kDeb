@@ -32,10 +32,34 @@ fi
 printf '%s  %s\n' "$ACTUAL_SHA256" "$(basename "$TARBALL")" > "$OUT/linux-source.SHA256"
 tar -C "$WORK" -xf "$TARBALL"
 
+# M1.3b.4b.6c diagnostic A/B test: FS-UAE places the qualification kernel
+# and Fast RAM in the 0x40000000 Zorro III range. Upstream Amiga 68030 setup
+# normally installs TT1 for that same range. Suppress only that TT1 mapping
+# here so Linux must rely on its temporary page-table mappings across TC
+# enable. This is diagnostic-only and must not become the production policy.
+python3 - "$SRC/arch/m68k/kernel/head.S" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+anchor = "\tmmu_map_tt\t#1,#0x40000000,#0x20000000,#_PAGE_NOCACHE_S\n"
+count = text.count(anchor)
+if count != 1:
+    raise SystemExit(f'FAIL: expected one Amiga Zorro III TT1 mapping, found {count}')
+text = text.replace(
+    anchor,
+    "\t/* m68kDeb 6c diagnostic: Zorro III TT1 suppressed */\n",
+    1,
+)
+path.write_text(text)
+PY
+printf '%s\n' 'disabled: Amiga 68030 Zorro III TT1 0x40000000/0x20000000' > "$OUT/MMU_68030_TT1_AB_TEST.txt"
+
 # M1.3b.4b.6c diagnostic: make the 68030 MMU engage sequence observable on
 # the existing early serial channel. H is emitted immediately before the
 # mmu_engage call by upstream head.S. These additional markers isolate the
-# irreversible 68030 transition without changing the mappings themselves:
+# irreversible 68030 transition without changing the remaining mappings:
 #   J = entered mmu_engage_030
 #   K = SRP loaded
 #   L = PFLUSHA completed
