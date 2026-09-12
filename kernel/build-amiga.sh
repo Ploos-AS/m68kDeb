@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-# CI retrigger: validate index-based 68030 MMU instrumentation in 6b runtime.
+# M1.3b.4b.6b runtime diagnostics for the 68030 Linux MMU handoff.
 LINUX_VERSION=${LINUX_VERSION:-7.2.4}
 LINUX_SHA256=${LINUX_SHA256:-01710ee01737dac492f1bae52becd057e08d20d11589089aa06accff415c28dd}
 JOBS=${JOBS:-2}
@@ -32,40 +32,36 @@ fi
 printf '%s  %s\n' "$ACTUAL_SHA256" "$(basename "$TARBALL")" > "$OUT/linux-source.SHA256"
 tar -C "$WORK" -xf "$TARBALL"
 
-# M1.3b.4b.6c diagnostic A/B test: FS-UAE places the qualification kernel
-# and Fast RAM in the 0x40000000 Zorro III range. Upstream Amiga 68030 setup
-# normally installs TT1 for that same range. Suppress only that TT1 mapping
-# here so Linux must rely on its temporary page-table mappings across TC
-# enable. This is diagnostic-only and must not become the production policy.
+# Diagnostic A/B test: suppress the *68030* Amiga Zorro III TT1 mapping.
+# The previous experiment accidentally matched the 68040 _PAGE_NOCACHE_S
+# branch.  The 68030 branch is _PAGE_NOCACHE030.  This is diagnostic-only;
+# production must retain the upstream mapping unless evidence says otherwise.
 python3 - "$SRC/arch/m68k/kernel/head.S" <<'PY'
 from pathlib import Path
 import sys
 
 path = Path(sys.argv[1])
 text = path.read_text()
-anchor = "\tmmu_map_tt\t#1,#0x40000000,#0x20000000,#_PAGE_NOCACHE_S\n"
+anchor = "\tmmu_map_tt\t#1,#0x40000000,#0x20000000,#_PAGE_NOCACHE030\n"
 count = text.count(anchor)
 if count != 1:
-    raise SystemExit(f'FAIL: expected one Amiga Zorro III TT1 mapping, found {count}')
+    raise SystemExit(f'FAIL: expected one 68030 Amiga Zorro III TT1 mapping, found {count}')
 text = text.replace(
     anchor,
-    "\t/* m68kDeb 6c diagnostic: Zorro III TT1 suppressed */\n",
+    "\t/* m68kDeb 6b.7 diagnostic: 68030 Zorro III TT1 suppressed */\n",
     1,
 )
 path.write_text(text)
 PY
 printf '%s\n' 'disabled: Amiga 68030 Zorro III TT1 0x40000000/0x20000000' > "$OUT/MMU_68030_TT1_AB_TEST.txt"
 
-# M1.3b.4b.6c diagnostic: make the 68030 MMU engage sequence observable on
-# the existing early serial channel. H is emitted immediately before the
-# mmu_engage call by upstream head.S. These additional markers isolate the
-# irreversible 68030 transition without changing the remaining mappings:
-#   J = entered mmu_engage_030
-#   K = SRP loaded
-#   L = PFLUSHA completed
-#   T = TT1/memory-start diagnostic follows
-#   M = immediately before TC enable
-#   N = mandatory post-TC long jump completed
+# Instrument the 68030 MMU engage sequence.  Everything below runs while the
+# MMU is still disabled until M.  R dumps the exact temporary translation path
+# for the mandatory post-TC long-jump target:
+#   R <pc> <root-entry> <ptr-entry> <pte>
+# The indices are the ones encoded by TC=0x82c07760: 7/7/6 bits and 4K pages.
+# This lets us validate the temporary root table without relying on a post-TC
+# serial access, which itself may be unsafe.
 python3 - "$SRC/arch/m68k/kernel/head.S" <<'PY'
 from pathlib import Path
 import sys
@@ -102,6 +98,7 @@ tc_anchor = "\tmovel\t#0x82c07760,%a0@(8)\n\tpmove\t%a0@(8),%tc\t/* enable the M
 tc_pos = block.find(tc_anchor, srp_pos + len(srp_repl))
 if tc_pos < 0:
     raise SystemExit('FAIL: 030 TC enable/long-jump anchor not found')
+
 tc_repl = (
     "\tputc\t'T'\n"
     "\tputn\t%a3\n"
@@ -109,6 +106,32 @@ tc_repl = (
     "\tpmove\t%tt1,%a0@(8)\n"
     "\tmovel\t%a0@(8),%d0\n"
     "\tputn\t%d0\n"
+    # Dump the temporary root->pointer->page translation for label 1.
+    "\tputc\t'R'\n"
+    "\tlea\t%pc@(1f),%a1\n"
+    "\tputn\t%a1\n"
+    "\tmovel\t%a1,%d0\n"
+    "\tmoveq\t#ROOT_INDEX_SHIFT,%d1\n"
+    "\tlsrl\t%d1,%d0\n"
+    "\tandl\t#ROOT_TABLE_SIZE-1,%d0\n"
+    "\tmovel\t%a3@(%d0*4),%d1\n"
+    "\tputn\t%d1\n"
+    "\tandw\t#-ROOT_TABLE_SIZE,%d1\n"
+    "\tmovel\t%d1,%a1\n"
+    "\tlea\t%pc@(1f),%d0\n"
+    "\tmoveq\t#PTR_INDEX_SHIFT,%d1\n"
+    "\tlsrl\t%d1,%d0\n"
+    "\tandl\t#PTR_TABLE_SIZE-1,%d0\n"
+    "\tmovel\t%a1@(%d0*4),%d1\n"
+    "\tputn\t%d1\n"
+    "\tandw\t#-PTR_TABLE_SIZE,%d1\n"
+    "\tmovel\t%d1,%a1\n"
+    "\tlea\t%pc@(1f),%d0\n"
+    "\tmoveq\t#PAGE_INDEX_SHIFT,%d1\n"
+    "\tlsrl\t%d1,%d0\n"
+    "\tandl\t#PAGE_TABLE_SIZE-1,%d0\n"
+    "\tmovel\t%a1@(%d0*4),%d1\n"
+    "\tputn\t%d1\n"
     "\tmovel\t#0x82c07760,%a0@(8)\n"
     "\tputc\t'M'\n"
     "\tpmove\t%a0@(8),%tc\t/* enable the MMU */\n"
@@ -121,7 +144,7 @@ block = block[:tc_pos] + tc_repl + block[tc_pos + len(tc_anchor):]
 text = text[:start] + block + text[end:]
 path.write_text(text)
 PY
-printf '%s\n' 'H->J(entry)->K(SRP)->L(PFLUSHA)->T(a3,a2,TT1)->M(pre-TC)->long-jump->N' > "$OUT/MMU_68030_TRACE.txt"
+printf '%s\n' 'H->J(entry)->K(SRP)->L(PFLUSHA)->T(a3,a2,TT1)->R(pc,root,ptr,pte)->M(pre-TC)->long-jump->N' > "$OUT/MMU_68030_TRACE.txt"
 
 make -C "$SRC" ARCH=m68k CROSS_COMPILE=m68k-linux-gnu- amiga_defconfig
 
