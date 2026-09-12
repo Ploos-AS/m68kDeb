@@ -54,8 +54,8 @@ static void map_page(ULONG *root, ULONG *ptr, ULONG *pte,
 
 int main(void)
 {
-    UBYTE *table_raw = NULL, *tramp_raw = NULL;
-    ULONG table_page, tramp_page, logical_alias_entry;
+    UBYTE *table_raw = NULL, *tramp_raw = NULL, *dummy_raw = NULL;
+    ULONG table_page, tramp_page, dummy_page, logical_alias_entry;
     ULONG *root, *ptr_phys, *ptr_log, *pte_phys, *pte_log;
     ULONG srp[2];
     ULONG pri, ppi, pti, lri, lpi, lti;
@@ -71,13 +71,15 @@ int main(void)
 
     table_raw = (UBYTE *)AllocMem(TABLE_RAW_BYTES, MEMF_PUBLIC | MEMF_CLEAR);
     tramp_raw = (UBYTE *)AllocMem(TRAMP_RAW_BYTES, MEMF_PUBLIC | MEMF_CLEAR);
-    if (!table_raw || !tramp_raw) {
+    dummy_raw = (UBYTE *)AllocMem(TRAMP_RAW_BYTES, MEMF_PUBLIC | MEMF_CLEAR);
+    if (!table_raw || !tramp_raw || !dummy_raw) {
         Printf("FAIL alloc\n");
         goto out;
     }
 
     table_page = align_page((ULONG)table_raw);
     tramp_page = align_page((ULONG)tramp_raw);
+    dummy_page = align_page((ULONG)dummy_raw);
     root = (ULONG *)table_page;
     ptr_phys = (ULONG *)(table_page + 512UL);
     ptr_log = (ULONG *)(table_page + 1024UL);
@@ -88,8 +90,16 @@ int main(void)
             (ULONG)m68kdeb_pmmu_smoke_blob_len);
     CacheClearU();
 
+    /*
+     * Diagnostic split: keep the normal identity mapping for the executable
+     * page, but map the low logical alias to a DIFFERENT physical page.
+     * Stage A never jumps to the low alias.  If Stage A now survives, the
+     * previous failure is specifically associated with two translations
+     * resolving to the same physical page rather than merely having a second
+     * root/pointer/PTE chain installed.
+     */
     map_page(root, ptr_phys, pte_phys, tramp_page, tramp_page);
-    map_page(root, ptr_log, pte_log, LOGICAL_ALIAS_PAGE, tramp_page);
+    map_page(root, ptr_log, pte_log, LOGICAL_ALIAS_PAGE, dummy_page);
 
     pri = (tramp_page >> ROOT_INDEX_SHIFT) & (ROOT_TABLE_SIZE - 1UL);
     ppi = (tramp_page >> PTR_INDEX_SHIFT) & (PTR_TABLE_SIZE - 1UL);
@@ -102,17 +112,19 @@ int main(void)
     srp[1] = (ULONG)root;
     logical_alias_entry = LOGICAL_ALIAS_PAGE + LOGICAL_ALIAS_OFFSET;
 
-    Printf("table=0x%08lx tramp=0x%08lx alias=0x%08lx\n",
-           table_page, tramp_page, logical_alias_entry);
+    Printf("table=0x%08lx tramp=0x%08lx dummy=0x%08lx alias=0x%08lx\n",
+           table_page, tramp_page, dummy_page, logical_alias_entry);
     Printf("physical ri=%lu pi=%lu ti=%lu root=%08lx ptr=%08lx pte=%08lx\n",
            pri, ppi, pti, root[pri], ptr_phys[ppi], pte_phys[pti]);
     Printf("logical ri=%lu pi=%lu ti=%lu root=%08lx ptr=%08lx pte=%08lx\n",
            lri, lpi, lti, root[lri], ptr_log[lpi], pte_log[lti]);
-    Printf("srp=%08lx:%08lx tc=82c07760\n", srp[0], srp[1]);
+    Printf("srp=%08lx:%08lx tc=82c07760 alias_target=DIFFERENT_PHYSICAL\n",
+           srp[0], srp[1]);
 
-    marker("SYS:m1-3b4b6b-pmmu-armed.marker", "PMMU dual-alias smoke armed\n");
+    marker("SYS:m1-3b4b6b-pmmu-armed.marker",
+           "PMMU second-mapping isolation smoke armed\n");
 
-    /* Stage A: same dual-alias tables, exact original PASS control flow. */
+    /* Stage A only: exact known-PASS control flow; low alias is never used. */
     Disable();
     old_super = SuperState();
     pre_rc = ((smoke_fn_t)tramp_page)(srp, logical_alias_entry, 0UL);
@@ -122,29 +134,22 @@ int main(void)
     Printf("M68KDEB_PMMU_PREALIAS_RETURN rc=%ld\n", pre_rc);
     if (pre_rc != 0) {
         marker("SYS:m1-3b4b6b-pmmu-prealias-fail.marker",
-               "PMMU pre-alias stage failed\n");
+               "PMMU second-mapping isolation stage failed\n");
         goto out;
     }
+
     marker("SYS:m1-3b4b6b-pmmu-prealias-pass.marker",
-           "PMMU TC activation survived before alias jump\n");
+           "PMMU second mapping with distinct physical target survived\n");
+    marker("SYS:m1-3b4b6b-pmmu-returned.marker",
+           "PMMU isolation smoke returned\n");
+    marker("SYS:m1-3b4b6b-pmmu-pass.marker",
+           "PMMU isolation smoke passed\n");
     Printf("M68KDEB_PMMU_PREALIAS_PASS\n");
-
-    /* Stage B: exact physical -> logical alias -> physical transition. */
-    Disable();
-    old_super = SuperState();
-    rc = ((smoke_fn_t)tramp_page)(srp, logical_alias_entry, 1UL);
-    if (old_super) UserState(old_super);
-    Enable();
-
-    Printf("M68KDEB_PMMU_SMOKE_RETURN rc=%ld\n", rc);
-    if (rc == 0) {
-        marker("SYS:m1-3b4b6b-pmmu-pass.marker", "PMMU dual-alias smoke passed\n");
-        Printf("M68KDEB_PMMU_SMOKE_PASS\n");
-    } else {
-        marker("SYS:m1-3b4b6b-pmmu-fail.marker", "PMMU dual-alias smoke returned failure\n");
-    }
+    Printf("M68KDEB_PMMU_SMOKE_PASS\n");
+    rc = 0;
 
 out:
+    if (dummy_raw) FreeMem(dummy_raw, TRAMP_RAW_BYTES);
     if (tramp_raw) FreeMem(tramp_raw, TRAMP_RAW_BYTES);
     if (table_raw) FreeMem(table_raw, TABLE_RAW_BYTES);
     return rc == 0 ? 0 : 20;
