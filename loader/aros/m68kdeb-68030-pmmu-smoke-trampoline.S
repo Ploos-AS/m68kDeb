@@ -1,16 +1,16 @@
 /*
- * M1.3b.4b.6b-PMMU: relocation-free MC68030 dual-alias PMMU smoke trampoline.
+ * M1.3b.4b.6b-PMMU: relocation-free MC68030 staged PMMU smoke trampoline.
  *
  * int entry(const ULONG srp[2], ULONG logical_alias_entry, ULONG mode);
  *
- * mode=0: enable TC through the physical identity mapping, execute the first
- * post-TC instructions there, then disable TC and return. This proves that the
- * exact dual-alias table set can activate translation before we attempt the
- * alias jump.
+ * mode=0 uses the exact control-flow shape of the original known-PASS smoke:
+ *   load SRP -> PFLUSHA -> enable TC -> NOP -> disable TC -> PFLUSHA -> return.
+ * The C harness still installs both the physical and low logical aliases, so
+ * this isolates whether merely adding the second alias corrupts translation.
  *
- * mode=1: enable TC, then jump from the physical identity alias to the low
- * linked/logical alias, jump back through the identity alias, disable TC and
- * return. This mirrors Linux mmu_engage's critical transition.
+ * mode=1 performs the Linux-like transition:
+ *   physical PC -> enable TC -> jump to logical alias -> jump back through
+ *   physical identity alias -> disable TC -> return.
  *
  * No stack or external-memory access occurs while translation is enabled.
  */
@@ -26,19 +26,31 @@ m68kdeb_68030_pmmu_smoke_entry:
 	movel	4(%sp),%a0
 	movel	8(%sp),%a1
 	movel	12(%sp),%d0
+	tstl	%d0
+	bne	m68kdeb_68030_pmmu_smoke_alias_test
+
+	/* Stage A: exact known-PASS PMMU activation sequence. */
+	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a3
+	pmove	%a0@,%srp
+	pflusha
+	pmove	%a3@,%tc
+	nop
+	pmove	%a3@(4),%tc
+	pflusha
+	moveq	#0,%d0
+	rts
+
+m68kdeb_68030_pmmu_smoke_alias_test:
+	/* Stage B: preserve physical addresses before translation is enabled. */
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_physical_resume),%a2
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a3
 	pmove	%a0@,%srp
 	pflusha
 	pmove	%a3@,%tc
-
-	/* First instructions after TC execute via the physical identity alias. */
-	tstl	%d0
-	beq	m68kdeb_68030_pmmu_smoke_physical_resume
 	jmp	(%a1)
 
 	/* Keep the logical alias at a fixed page offset for the C harness. */
-	.org	64
+	.org	96
 m68kdeb_68030_pmmu_smoke_alias:
 	/* TC is still enabled here. Return via the identity alias first. */
 	jmp	(%a2)
