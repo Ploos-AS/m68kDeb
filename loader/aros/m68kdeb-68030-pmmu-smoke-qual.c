@@ -23,7 +23,7 @@
 extern unsigned char m68kdeb_pmmu_smoke_blob[];
 extern unsigned int m68kdeb_pmmu_smoke_blob_len;
 
-typedef LONG (*smoke_fn_t)(ULONG *srp, ULONG logical_alias_entry);
+typedef LONG (*smoke_fn_t)(ULONG *srp, ULONG logical_alias_entry, ULONG mode);
 
 static ULONG align_page(ULONG p)
 {
@@ -60,7 +60,7 @@ int main(void)
     ULONG srp[2];
     ULONG pri, ppi, pti, lri, lpi, lti;
     APTR old_super;
-    LONG rc = 20;
+    LONG pre_rc = 20, rc = 20;
 
     Printf("M68KDEB_PMMU_SMOKE_START\n");
 
@@ -112,9 +112,27 @@ int main(void)
 
     marker("SYS:m1-3b4b6b-pmmu-armed.marker", "PMMU dual-alias smoke armed\n");
 
+    /* Stage A: same dual-alias tables, but do not take the alias jump. */
     Disable();
     old_super = SuperState();
-    rc = ((smoke_fn_t)tramp_page)(srp, logical_alias_entry);
+    pre_rc = ((smoke_fn_t)tramp_page)(srp, logical_alias_entry, 0UL);
+    if (old_super) UserState(old_super);
+    Enable();
+
+    Printf("M68KDEB_PMMU_PREALIAS_RETURN rc=%ld\n", pre_rc);
+    if (pre_rc != 0) {
+        marker("SYS:m1-3b4b6b-pmmu-prealias-fail.marker",
+               "PMMU pre-alias stage failed\n");
+        goto out;
+    }
+    marker("SYS:m1-3b4b6b-pmmu-prealias-pass.marker",
+           "PMMU TC activation survived before alias jump\n");
+    Printf("M68KDEB_PMMU_PREALIAS_PASS\n");
+
+    /* Stage B: exact physical -> logical alias -> physical transition. */
+    Disable();
+    old_super = SuperState();
+    rc = ((smoke_fn_t)tramp_page)(srp, logical_alias_entry, 1UL);
     if (old_super) UserState(old_super);
     Enable();
 
