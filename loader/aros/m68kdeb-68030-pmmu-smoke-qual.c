@@ -18,7 +18,7 @@
 #define TABLE_DESC 0x0000000aUL
 #define PAGE_DESC 0x00000019UL
 #define LOGICAL_ALIAS_PAGE 0x005db000UL
-#define LOGICAL_ALIAS_OFFSET 64UL
+#define LOGICAL_ALIAS_OFFSET 96UL
 
 extern unsigned char m68kdeb_pmmu_smoke_blob[];
 extern unsigned int m68kdeb_pmmu_smoke_blob_len;
@@ -112,7 +112,7 @@ int main(void)
 
     marker("SYS:m1-3b4b6b-pmmu-armed.marker", "PMMU dual-alias smoke armed\n");
 
-    /* Stage A: same dual-alias tables, but do not take the alias jump. */
+    /* Stage A: same dual-alias tables, exact original PASS control flow. */
     Disable();
     old_super = SuperState();
     pre_rc = ((smoke_fn_t)tramp_page)(srp, logical_alias_entry, 0UL);
