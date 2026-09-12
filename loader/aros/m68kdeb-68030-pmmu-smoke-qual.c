@@ -80,10 +80,19 @@ int main(void)
     table_page = align_page((ULONG)table_raw);
     tramp_page = align_page((ULONG)tramp_raw);
     dummy_page = align_page((ULONG)dummy_raw);
+
+    /*
+     * Preserve the original known-PASS physical table layout exactly:
+     *   root      +0
+     *   ptr_phys  +512
+     *   pte_phys  +1024
+     * The second logical chain is placed only in the remaining space so the
+     * identity path is byte-for-byte equivalent in table placement to run #2.
+     */
     root = (ULONG *)table_page;
     ptr_phys = (ULONG *)(table_page + 512UL);
-    ptr_log = (ULONG *)(table_page + 1024UL);
-    pte_phys = (ULONG *)(table_page + 1536UL);
+    pte_phys = (ULONG *)(table_page + 1024UL);
+    ptr_log = (ULONG *)(table_page + 1280UL);
     pte_log = (ULONG *)(table_page + 1792UL);
 
     CopyMem(m68kdeb_pmmu_smoke_blob, (APTR)tramp_page,
@@ -91,12 +100,11 @@ int main(void)
     CacheClearU();
 
     /*
-     * Diagnostic split: keep the normal identity mapping for the executable
-     * page, but map the low logical alias to a DIFFERENT physical page.
-     * Stage A never jumps to the low alias.  If Stage A now survives, the
-     * previous failure is specifically associated with two translations
-     * resolving to the same physical page rather than merely having a second
-     * root/pointer/PTE chain installed.
+     * Keep the known-good identity mapping for the executable page.  Install
+     * a second low logical mapping to a DIFFERENT physical page, but Stage A
+     * never touches that alias.  This isolates whether the mere presence of a
+     * second valid root chain breaks activation when the physical chain itself
+     * remains in its original known-good locations.
      */
     map_page(root, ptr_phys, pte_phys, tramp_page, tramp_page);
     map_page(root, ptr_log, pte_log, LOGICAL_ALIAS_PAGE, dummy_page);
@@ -122,7 +130,7 @@ int main(void)
            srp[0], srp[1]);
 
     marker("SYS:m1-3b4b6b-pmmu-armed.marker",
-           "PMMU second-mapping isolation smoke armed\n");
+           "PMMU preserved-layout second-mapping isolation armed\n");
 
     /* Stage A only: exact known-PASS control flow; low alias is never used. */
     Disable();
@@ -134,12 +142,12 @@ int main(void)
     Printf("M68KDEB_PMMU_PREALIAS_RETURN rc=%ld\n", pre_rc);
     if (pre_rc != 0) {
         marker("SYS:m1-3b4b6b-pmmu-prealias-fail.marker",
-               "PMMU second-mapping isolation stage failed\n");
+               "PMMU preserved-layout second-mapping isolation failed\n");
         goto out;
     }
 
     marker("SYS:m1-3b4b6b-pmmu-prealias-pass.marker",
-           "PMMU second mapping with distinct physical target survived\n");
+           "PMMU preserved-layout second mapping survived\n");
     marker("SYS:m1-3b4b6b-pmmu-returned.marker",
            "PMMU isolation smoke returned\n");
     marker("SYS:m1-3b4b6b-pmmu-pass.marker",
