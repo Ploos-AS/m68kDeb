@@ -4,6 +4,7 @@
 #include <exec/types.h>
 #include <proto/dos.h>
 #include <proto/exec.h>
+#include <string.h>
 
 #define PAGE_SIZE 4096UL
 #define TABLE_RAW_BYTES (PAGE_SIZE * 2UL - 1UL)
