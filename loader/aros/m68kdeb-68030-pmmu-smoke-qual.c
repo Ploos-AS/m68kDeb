@@ -17,11 +17,13 @@
 #define PAGE_INDEX_SHIFT 12UL
 #define TABLE_DESC 0x0000000aUL
 #define PAGE_DESC 0x00000019UL
+#define LOGICAL_ALIAS_PAGE 0x005db000UL
+#define LOGICAL_ALIAS_OFFSET 64UL
 
 extern unsigned char m68kdeb_pmmu_smoke_blob[];
 extern unsigned int m68kdeb_pmmu_smoke_blob_len;
 
-typedef LONG (*smoke_fn_t)(ULONG *srp);
+typedef LONG (*smoke_fn_t)(ULONG *srp, ULONG logical_alias_entry);
 
 static ULONG align_page(ULONG p)
 {
@@ -38,13 +40,25 @@ static LONG marker(const char *path, const char *text)
     return n > 0 ? 0 : 20;
 }
 
+static void map_page(ULONG *root, ULONG *ptr, ULONG *pte,
+                     ULONG logical, ULONG physical)
+{
+    ULONG ri = (logical >> ROOT_INDEX_SHIFT) & (ROOT_TABLE_SIZE - 1UL);
+    ULONG pi = (logical >> PTR_INDEX_SHIFT) & (PTR_TABLE_SIZE - 1UL);
+    ULONG ti = (logical >> PAGE_INDEX_SHIFT) & (PAGE_TABLE_SIZE - 1UL);
+
+    root[ri] = ((ULONG)ptr & 0xffffff00UL) | TABLE_DESC;
+    ptr[pi] = ((ULONG)pte & 0xffffff00UL) | TABLE_DESC;
+    pte[ti] = (physical & 0xfffff000UL) | PAGE_DESC;
+}
+
 int main(void)
 {
     UBYTE *table_raw = NULL, *tramp_raw = NULL;
-    ULONG table_page, tramp_page;
-    ULONG *root, *ptr, *pte;
+    ULONG table_page, tramp_page, logical_alias_entry;
+    ULONG *root, *ptr_phys, *ptr_log, *pte_phys, *pte_log;
     ULONG srp[2];
-    ULONG ri, pi, ti;
+    ULONG pri, ppi, pti, lri, lpi, lti;
     APTR old_super;
     LONG rc = 20;
 
@@ -65,43 +79,51 @@ int main(void)
     table_page = align_page((ULONG)table_raw);
     tramp_page = align_page((ULONG)tramp_raw);
     root = (ULONG *)table_page;
-    ptr = (ULONG *)(table_page + 512UL);
-    pte = (ULONG *)(table_page + 1024UL);
+    ptr_phys = (ULONG *)(table_page + 512UL);
+    ptr_log = (ULONG *)(table_page + 1024UL);
+    pte_phys = (ULONG *)(table_page + 1536UL);
+    pte_log = (ULONG *)(table_page + 1792UL);
 
     CopyMem(m68kdeb_pmmu_smoke_blob, (APTR)tramp_page,
             (ULONG)m68kdeb_pmmu_smoke_blob_len);
     CacheClearU();
 
-    ri = (tramp_page >> ROOT_INDEX_SHIFT) & (ROOT_TABLE_SIZE - 1UL);
-    pi = (tramp_page >> PTR_INDEX_SHIFT) & (PTR_TABLE_SIZE - 1UL);
-    ti = (tramp_page >> PAGE_INDEX_SHIFT) & (PAGE_TABLE_SIZE - 1UL);
+    map_page(root, ptr_phys, pte_phys, tramp_page, tramp_page);
+    map_page(root, ptr_log, pte_log, LOGICAL_ALIAS_PAGE, tramp_page);
 
-    root[ri] = ((ULONG)ptr & 0xffffff00UL) | TABLE_DESC;
-    ptr[pi] = ((ULONG)pte & 0xffffff00UL) | TABLE_DESC;
-    pte[ti] = (tramp_page & 0xfffff000UL) | PAGE_DESC;
+    pri = (tramp_page >> ROOT_INDEX_SHIFT) & (ROOT_TABLE_SIZE - 1UL);
+    ppi = (tramp_page >> PTR_INDEX_SHIFT) & (PTR_TABLE_SIZE - 1UL);
+    pti = (tramp_page >> PAGE_INDEX_SHIFT) & (PAGE_TABLE_SIZE - 1UL);
+    lri = (LOGICAL_ALIAS_PAGE >> ROOT_INDEX_SHIFT) & (ROOT_TABLE_SIZE - 1UL);
+    lpi = (LOGICAL_ALIAS_PAGE >> PTR_INDEX_SHIFT) & (PTR_TABLE_SIZE - 1UL);
+    lti = (LOGICAL_ALIAS_PAGE >> PAGE_INDEX_SHIFT) & (PAGE_TABLE_SIZE - 1UL);
 
     srp[0] = 0x80000002UL;
     srp[1] = (ULONG)root;
+    logical_alias_entry = LOGICAL_ALIAS_PAGE + LOGICAL_ALIAS_OFFSET;
 
-    Printf("table=0x%08lx tramp=0x%08lx ri=%lu pi=%lu ti=%lu\n",
-           table_page, tramp_page, ri, pi, ti);
-    Printf("srp=%08lx:%08lx root=%08lx ptr=%08lx pte=%08lx\n",
-           srp[0], srp[1], root[ri], ptr[pi], pte[ti]);
+    Printf("table=0x%08lx tramp=0x%08lx alias=0x%08lx\n",
+           table_page, tramp_page, logical_alias_entry);
+    Printf("physical ri=%lu pi=%lu ti=%lu root=%08lx ptr=%08lx pte=%08lx\n",
+           pri, ppi, pti, root[pri], ptr_phys[ppi], pte_phys[pti]);
+    Printf("logical ri=%lu pi=%lu ti=%lu root=%08lx ptr=%08lx pte=%08lx\n",
+           lri, lpi, lti, root[lri], ptr_log[lpi], pte_log[lti]);
+    Printf("srp=%08lx:%08lx tc=82c07760\n", srp[0], srp[1]);
 
-    marker("SYS:m1-3b4b6b-pmmu-armed.marker", "PMMU smoke armed\n");
+    marker("SYS:m1-3b4b6b-pmmu-armed.marker", "PMMU dual-alias smoke armed\n");
 
     Disable();
     old_super = SuperState();
-    rc = ((smoke_fn_t)tramp_page)(srp);
+    rc = ((smoke_fn_t)tramp_page)(srp, logical_alias_entry);
     if (old_super) UserState(old_super);
     Enable();
 
     Printf("M68KDEB_PMMU_SMOKE_RETURN rc=%ld\n", rc);
     if (rc == 0) {
-        marker("SYS:m1-3b4b6b-pmmu-pass.marker", "PMMU smoke passed\n");
+        marker("SYS:m1-3b4b6b-pmmu-pass.marker", "PMMU dual-alias smoke passed\n");
         Printf("M68KDEB_PMMU_SMOKE_PASS\n");
     } else {
-        marker("SYS:m1-3b4b6b-pmmu-fail.marker", "PMMU smoke returned failure\n");
+        marker("SYS:m1-3b4b6b-pmmu-fail.marker", "PMMU dual-alias smoke returned failure\n");
     }
 
 out:
