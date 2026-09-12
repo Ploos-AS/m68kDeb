@@ -34,7 +34,7 @@ tar -C "$WORK" -xf "$TARBALL"
 
 # Diagnostic A/B test: suppress the *68030* Amiga Zorro III TT1 mapping.
 # The previous experiment accidentally matched the 68040 _PAGE_NOCACHE_S
-# branch.  The 68030 branch is _PAGE_NOCACHE030.  This is diagnostic-only;
+# branch. The 68030 branch is _PAGE_NOCACHE030. This is diagnostic-only;
 # production must retain the upstream mapping unless evidence says otherwise.
 python3 - "$SRC/arch/m68k/kernel/head.S" <<'PY'
 from pathlib import Path
@@ -48,7 +48,7 @@ if count != 1:
     raise SystemExit(f'FAIL: expected one 68030 Amiga Zorro III TT1 mapping, found {count}')
 text = text.replace(
     anchor,
-    "\t/* m68kDeb 6b.9 diagnostic: 68030 Zorro III TT1 suppressed */\n",
+    "\t/* m68kDeb 6b.10 diagnostic: 68030 Zorro III TT1 suppressed */\n",
     1,
 )
 path.write_text(text)
@@ -56,14 +56,19 @@ PY
 printf '%s\n' 'disabled: Amiga 68030 Zorro III TT1 0x40000000/0x20000000' > "$OUT/MMU_68030_TT1_AB_TEST.txt"
 
 # Instrument the 68030 MMU engage sequence. Everything below runs while the
-# MMU is still disabled until M.  S dumps the exact 64-bit SRP descriptor
-# image and the TC value Linux is about to load.  R walks the temporary mapping
-# for the linked/logical long-jump target.  P independently walks the mapping
-# for the current PC-relative/physical long-jump target.  The latter identity
-# mapping is critical: immediately after PMOVE enables TC the CPU must fetch
-# the JMP instruction at the still-physical PC before the long jump can switch
-# execution to its linked/logical address.
-#   S <srp-hi> <srp-lo> <tc>
+# MMU is still disabled until M. S dumps the 64-bit SRP image Linux intends to
+# load. Q then reads SRP and TC back through PMOVE and records SR, proving what
+# the emulated PMMU actually accepted and whether the CPU is in supervisor
+# state immediately before enabling translation. R and P walk the linked and
+# physical aliases of the mandatory long-jump target.
+#
+# Linux 7.2 motorola_pgtable.h defines table descriptors as
+# _PAGE_SHORT|_PAGE_ACCESSED = 0x00a, while a writable present page is
+# _PAGE_PRESENT|_PAGE_ACCESSED|_PAGE_DIRTY = 0x019. The observed 6b.9 table
+# chain therefore has valid descriptor types; 6b.10 focuses on PMMU state.
+#
+#   S <srp-hi-image> <srp-lo-image> <pending-tc>
+#   Q <srp-hi-readback> <srp-lo-readback> <tc-readback> <sr>
 #   R <logical-pc> <root-raw> <root-base> <ptr-raw> <ptr-base> <pte-raw> <pte-base>
 #   P <physical-pc> <root-raw> <root-base> <ptr-raw> <ptr-base> <pte-raw> <pte-base>
 # The indices are those encoded by TC=0x82c07760: 7/7/6 bits, 4K pages.
@@ -111,13 +116,29 @@ tc_repl = (
     "\tpmove\t%tt1,%a0@(8)\n"
     "\tmovel\t%a0@(8),%d0\n"
     "\tputn\t%d0\n"
-    # Dump the exact SRP image Linux loaded and the pending TC value.
+    # Dump the exact SRP image Linux constructed and the pending TC value.
     "\tputc\t'S'\n"
     "\tmovel\t%a0@,%d0\n"
     "\tputn\t%d0\n"
     "\tmovel\t%a0@(4),%d0\n"
     "\tputn\t%d0\n"
     "\tmovel\t#0x82c07760,%d0\n"
+    "\tputn\t%d0\n"
+    # Read the PMMU registers back before TC is enabled. This distinguishes a
+    # correct memory image from what FS-UAE/68030 PMOVE actually accepted.
+    # Also record SR; bit 13 must be set so TC.SRE selects SRP, not CRP.
+    "\tputc\t'Q'\n"
+    "\tlea\t%pc@(L(mmu_engage_030_temp)),%a0\n"
+    "\tpmove\t%srp,%a0@\n"
+    "\tmovel\t%a0@,%d0\n"
+    "\tputn\t%d0\n"
+    "\tmovel\t%a0@(4),%d0\n"
+    "\tputn\t%d0\n"
+    "\tpmove\t%tc,%a0@(8)\n"
+    "\tmovel\t%a0@(8),%d0\n"
+    "\tputn\t%d0\n"
+    "\tmoveq\t#0,%d0\n"
+    "\tmovew\t%sr,%d0\n"
     "\tputn\t%d0\n"
     # Walk the mapping for the linked/logical post-TC target.
     "\tputc\t'R'\n"
@@ -129,7 +150,7 @@ tc_repl = (
     "\tandl\t#ROOT_TABLE_SIZE-1,%d0\n"
     "\tmovel\t%a3@(%d0*4),%d1\n"
     "\tputn\t%d1\n"
-    "\tandw\t#-ROOT_TABLE_SIZE,%d1\n"
+    "\tandl\t#0xffffff00,%d1\n"
     "\tputn\t%d1\n"
     "\tmovel\t%d1,%a1\n"
     "\tmovel\t#1f,%d0\n"
@@ -138,7 +159,7 @@ tc_repl = (
     "\tandl\t#PTR_TABLE_SIZE-1,%d0\n"
     "\tmovel\t%a1@(%d0*4),%d1\n"
     "\tputn\t%d1\n"
-    "\tandw\t#-PTR_TABLE_SIZE,%d1\n"
+    "\tandl\t#0xffffff00,%d1\n"
     "\tputn\t%d1\n"
     "\tmovel\t%d1,%a1\n"
     "\tmovel\t#1f,%d0\n"
@@ -150,10 +171,8 @@ tc_repl = (
     "\tmovel\t%d1,%d0\n"
     "\tandl\t#0xfffff000,%d0\n"
     "\tputn\t%d0\n"
-    # Walk the second alias created by mmu_temp_map: the current physical
-    # address must identity-map so the first instruction fetch after PMOVE TC
-    # can reach the mandatory long JMP.  PC-relative LEA gives that runtime
-    # physical address while the MMU is still disabled.
+    # Walk the second alias created by mmu_temp_map. PC-relative LEA gives the
+    # current physical address while the MMU is still disabled.
     "\tputc\t'P'\n"
     "\tlea\t%pc@(1f),%a1\n"
     "\tputn\t%a1\n"
@@ -163,7 +182,7 @@ tc_repl = (
     "\tandl\t#ROOT_TABLE_SIZE-1,%d0\n"
     "\tmovel\t%a3@(%d0*4),%d1\n"
     "\tputn\t%d1\n"
-    "\tandw\t#-ROOT_TABLE_SIZE,%d1\n"
+    "\tandl\t#0xffffff00,%d1\n"
     "\tputn\t%d1\n"
     "\tmovel\t%d1,%a1\n"
     "\tlea\t%pc@(1f),%a0\n"
@@ -173,7 +192,7 @@ tc_repl = (
     "\tandl\t#PTR_TABLE_SIZE-1,%d0\n"
     "\tmovel\t%a1@(%d0*4),%d1\n"
     "\tputn\t%d1\n"
-    "\tandw\t#-PTR_TABLE_SIZE,%d1\n"
+    "\tandl\t#0xffffff00,%d1\n"
     "\tputn\t%d1\n"
     "\tmovel\t%d1,%a1\n"
     "\tmovel\t%a0,%d0\n"
@@ -189,6 +208,8 @@ tc_repl = (
     "\tlea\t%pc@(L(mmu_engage_030_temp)),%a0\n"
     "\tmovel\t#0x82c07760,%a0@(8)\n"
     "\tputc\t'M'\n"
+    # Do not insert any diagnostic operation between PMOVE TC and the long
+    # jump. The transition must remain exactly the upstream sequence.
     "\tpmove\t%a0@(8),%tc\t/* enable the MMU */\n"
     "\tjmp\t1f:l\n"
     "1:\tputc\t'N'\n"
@@ -199,7 +220,7 @@ block = block[:tc_pos] + tc_repl + block[tc_pos + len(tc_anchor):]
 text = text[:start] + block + text[end:]
 path.write_text(text)
 PY
-printf '%s\n' 'H->J(entry)->K(SRP)->L(PFLUSHA)->T(a3,a2,TT1)->S(srp-hi,srp-lo,tc)->R(logical-pc,root-raw,root-base,ptr-raw,ptr-base,pte-raw,pte-base)->P(physical-pc,root-raw,root-base,ptr-raw,ptr-base,pte-raw,pte-base)->M(pre-TC)->long-jump->N' > "$OUT/MMU_68030_TRACE.txt"
+printf '%s\n' 'H->J(entry)->K(SRP)->L(PFLUSHA)->T(a3,a2,TT1)->S(srp-image)->Q(srp-readback,tc-readback,sr)->R(logical-map)->P(physical-map)->M(pre-TC)->long-jump->N' > "$OUT/MMU_68030_TRACE.txt"
 
 make -C "$SRC" ARCH=m68k CROSS_COMPILE=m68k-linux-gnu- amiga_defconfig
 
