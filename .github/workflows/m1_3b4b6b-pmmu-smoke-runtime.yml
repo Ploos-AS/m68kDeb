@@ -1,0 +1,97 @@
+name: M1.3b.4b.6b 68030 PMMU smoke runtime
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/m1_3b4b6b-pmmu-smoke-runtime.yml'
+      - 'ci/fs-uae/prepare-m1_3b4b6b-pmmu-smoke.sh'
+      - 'ci/fs-uae/m1_3b4b6b_aros_a1200_pmmu_smoke.fs-uae'
+      - 'loader/aros/m68kdeb-68030-pmmu-smoke-trampoline.S'
+      - 'loader/aros/m68kdeb-68030-pmmu-smoke-qual.c'
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends fs-uae curl unzip xorriso xvfb
+          docker --version
+          fs-uae --version
+
+      - name: Build PMMU smoke blob and qualifier
+        run: |
+          mkdir -p out/m1-3b4b6b-pmmu
+          docker pull amigadev/m68k-amigaos-gcc:latest
+          docker run --rm -v "$PWD:/work" -w /work amigadev/m68k-amigaos-gcc:latest sh -lc '
+            set -eu
+            CC=$(find / -type f -name "m68k-amigaos-gcc" 2>/dev/null | head -n 1)
+            NM=$(find / -type f -name "m68k-amigaos-nm" 2>/dev/null | head -n 1)
+            OBJCOPY=$(find / -type f -name "m68k-amigaos-objcopy" 2>/dev/null | head -n 1)
+            OBJDUMP=$(find / -type f -name "m68k-amigaos-objdump" 2>/dev/null | head -n 1)
+            "$CC" -x assembler-with-cpp -c loader/aros/m68kdeb-68030-pmmu-smoke-trampoline.S -o out/m1-3b4b6b-pmmu/smoke.o -m68030 -m68851
+            "$NM" -n out/m1-3b4b6b-pmmu/smoke.o > out/m1-3b4b6b-pmmu/smoke.nm
+            "$OBJDUMP" -r out/m1-3b4b6b-pmmu/smoke.o > out/m1-3b4b6b-pmmu/smoke.relocs.txt
+            "$OBJCOPY" -O binary -j .text out/m1-3b4b6b-pmmu/smoke.o out/m1-3b4b6b-pmmu/smoke.bin
+          '
+          ! grep -Eq '^[[:space:]]*[0-9a-fA-F]+[[:space:]]+R_' out/m1-3b4b6b-pmmu/smoke.relocs.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          data=Path('out/m1-3b4b6b-pmmu/smoke.bin').read_bytes()
+          assert 0 < len(data) <= 4096
+          body=','.join(f'0x{x:02x}' for x in data)
+          Path('out/m1-3b4b6b-pmmu/smoke-blob.c').write_text(
+              'unsigned char m68kdeb_pmmu_smoke_blob[]={' + body + '};\n'
+              'unsigned int m68kdeb_pmmu_smoke_blob_len=sizeof(m68kdeb_pmmu_smoke_blob);\n')
+          PY
+          docker run --rm -v "$PWD:/work" -w /work amigadev/m68k-amigaos-gcc:latest sh -lc '
+            set -eu
+            CC=$(find / -type f -name "m68k-amigaos-gcc" 2>/dev/null | head -n 1)
+            "$CC" loader/aros/m68kdeb-68030-pmmu-smoke-qual.c out/m1-3b4b6b-pmmu/smoke-blob.c -o out/m1-3b4b6b-pmmu/m68kdeb-68030-pmmu-smoke-qual -m68030 -Os -Wall -Wextra -Werror -noixemul
+          '
+
+      - name: Prepare AROS FS-UAE runtime
+        run: sh ci/fs-uae/prepare-m1_3b4b6b-pmmu-smoke.sh
+
+      - name: Run isolated PMMU smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout 150 xvfb-run -a fs-uae ci/fs-uae/m1_3b4b6b_aros_a1200_pmmu_smoke.fs-uae >out/m1-3b4b6b-pmmu/fs-uae.stdout.log 2>out/m1-3b4b6b-pmmu/fs-uae.stderr.log || true
+
+      - name: Qualify PMMU enable-disable return
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=out/m1-3b4b6b-pmmu/aros-root
+          test -f "$root/m1-3b4b6b-pmmu-armed.marker"
+          test -f "$root/m1-3b4b6b-pmmu-returned.marker"
+          test -f "$root/m1-3b4b6b-pmmu-pass.marker"
+          test -f "$root/m68kdeb-pmmu-smoke-report.txt"
+          grep -Fq 'M68KDEB_PMMU_SMOKE_PASS' "$root/m68kdeb-pmmu-smoke-report.txt"
+          echo 'PASS: isolated MC68030 PMMU TC enable/disable survived and returned to AROS'
+
+      - name: Upload PMMU smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m1-3b4b6b-pmmu-smoke-evidence
+          if-no-files-found: warn
+          path: |
+            out/m1-3b4b6b-pmmu/fs-uae.stdout.log
+            out/m1-3b4b6b-pmmu/fs-uae.stderr.log
+            out/m1-3b4b6b-pmmu/RUNTIME_PROVENANCE.txt
+            out/m1-3b4b6b-pmmu/smoke.relocs.txt
+            out/m1-3b4b6b-pmmu/aros-root/m68kdeb-pmmu-smoke-report.txt
+            out/m1-3b4b6b-pmmu/aros-root/m1-3b4b6b-pmmu-armed.marker
+            out/m1-3b4b6b-pmmu/aros-root/m1-3b4b6b-pmmu-returned.marker
+            out/m1-3b4b6b-pmmu/aros-root/m1-3b4b6b-pmmu-pass.marker
