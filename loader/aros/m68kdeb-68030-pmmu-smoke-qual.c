@@ -22,7 +22,7 @@
 extern unsigned char m68kdeb_pmmu_smoke_blob[];
 extern unsigned int m68kdeb_pmmu_smoke_blob_len;
 
-typedef LONG (*smoke_fn_t)(ULONG *srp);
+typedef LONG (*smoke_fn_t)(ULONG *srp, ULONG phase);
 
 static ULONG align_page(ULONG p)
 {
@@ -39,6 +39,19 @@ static LONG marker(const char *path, const char *text)
     return n > 0 ? 0 : 20;
 }
 
+static LONG run_phase(smoke_fn_t smoke, ULONG *srp, ULONG phase)
+{
+    APTR old_super;
+    LONG rc;
+
+    Disable();
+    old_super = SuperState();
+    rc = smoke(srp, phase);
+    if (old_super) UserState(old_super);
+    Enable();
+    return rc;
+}
+
 int main(void)
 {
     UBYTE *table_raw = NULL, *tramp_raw = NULL;
@@ -46,7 +59,7 @@ int main(void)
     ULONG *root, *ptr, *pte, *ptr_log, *pte_log;
     ULONG srp[2];
     ULONG ri, pi, ti, lri, lpi, lti;
-    APTR old_super;
+    smoke_fn_t smoke;
     LONG rc = 20;
 
     Printf("M68KDEB_PMMU_SMOKE_START\n");
@@ -74,6 +87,7 @@ int main(void)
     CopyMem(m68kdeb_pmmu_smoke_blob, (APTR)tramp_page,
             (ULONG)m68kdeb_pmmu_smoke_blob_len);
     CacheClearU();
+    smoke = (smoke_fn_t)tramp_page;
 
     ri = (tramp_page >> ROOT_INDEX_SHIFT) & (ROOT_TABLE_SIZE - 1UL);
     pi = (tramp_page >> PTR_INDEX_SHIFT) & (PTR_TABLE_SIZE - 1UL);
@@ -86,11 +100,6 @@ int main(void)
     ptr[pi] = ((ULONG)pte & 0xffffff00UL) | TABLE_DESC;
     pte[ti] = (tramp_page & 0xfffff000UL) | PAGE_DESC;
 
-    /* Preserve the passing second-root + second-pointer experiment and add
-     * exactly one new descriptor level: a valid page descriptor mapping the
-     * low logical alias to the same trampoline physical page. The trampoline
-     * still executes only through its physical identity mapping; there is no
-     * logical alias jump in this test. */
     root[lri] = ((ULONG)ptr_log & 0xffffff00UL) | TABLE_DESC;
     ptr_log[lpi] = ((ULONG)pte_log & 0xffffff00UL) | TABLE_DESC;
     pte_log[lti] = (tramp_page & 0xfffff000UL) | PAGE_DESC;
@@ -102,26 +111,36 @@ int main(void)
            table_page, tramp_page, ri, pi, ti);
     Printf("srp=%08lx:%08lx root=%08lx ptr=%08lx pte=%08lx\n",
            srp[0], srp[1], root[ri], ptr[pi], pte[ti]);
-    Printf("pte_test lri=%lu lpi=%lu lti=%lu logical_root=%08lx logical_ptr=%08lx logical_pte=%08lx\n",
+    Printf("alias lri=%lu lpi=%lu lti=%lu root=%08lx ptr=%08lx pte=%08lx\n",
            lri, lpi, lti, root[lri], ptr_log[lpi], pte_log[lti]);
 
-    marker("SYS:m1-3b4b6b-pmmu-armed.marker",
-           "PMMU second-page isolation armed\n");
+    marker("SYS:m1-3b4b6b-pmmu-armed.marker", "PMMU phased smoke armed\n");
 
-    Disable();
-    old_super = SuperState();
-    rc = ((smoke_fn_t)tramp_page)(srp);
-    if (old_super) UserState(old_super);
-    Enable();
+    marker("SYS:m1-3b4b6b-pmmu-phase1-entered.marker", "identity phase entered\n");
+    rc = run_phase(smoke, srp, 1UL);
+    if (rc != 0) goto fail;
+    marker("SYS:m1-3b4b6b-pmmu-identity-pass.marker", "identity enable/disable returned\n");
+    Printf("M68KDEB_PMMU_PHASE1_PASS\n");
+
+    marker("SYS:m1-3b4b6b-pmmu-phase2-entered.marker", "PLOADR phase entered\n");
+    rc = run_phase(smoke, srp, 2UL);
+    if (rc != 0) goto fail;
+    marker("SYS:m1-3b4b6b-pmmu-pload-pass.marker", "PLOADR phase returned\n");
+    Printf("M68KDEB_PMMU_PHASE2_PASS\n");
+
+    marker("SYS:m1-3b4b6b-pmmu-phase3-entered.marker", "alias fetch phase entered\n");
+    rc = run_phase(smoke, srp, 3UL);
+    if (rc != 0) goto fail;
 
     Printf("M68KDEB_PMMU_SMOKE_RETURN rc=%ld\n", rc);
-    if (rc == 0) {
-        marker("SYS:m1-3b4b6b-pmmu-returned.marker", "PMMU smoke returned\n");
-        marker("SYS:m1-3b4b6b-pmmu-pass.marker", "PMMU second-page isolation passed\n");
-        Printf("M68KDEB_PMMU_SMOKE_PASS\n");
-    } else {
-        marker("SYS:m1-3b4b6b-pmmu-fail.marker", "PMMU smoke returned failure\n");
-    }
+    marker("SYS:m1-3b4b6b-pmmu-returned.marker", "PMMU alias fetch returned\n");
+    marker("SYS:m1-3b4b6b-pmmu-pass.marker", "PMMU phased alias fetch passed\n");
+    Printf("M68KDEB_PMMU_SMOKE_PASS\n");
+    goto out;
+
+fail:
+    marker("SYS:m1-3b4b6b-pmmu-fail.marker", "PMMU phase returned failure\n");
+    Printf("M68KDEB_PMMU_SMOKE_FAIL rc=%ld\n", rc);
 
 out:
     if (tramp_raw) FreeMem(tramp_raw, TRAMP_RAW_BYTES);
