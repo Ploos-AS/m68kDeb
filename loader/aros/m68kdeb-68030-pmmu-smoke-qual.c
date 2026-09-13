@@ -43,9 +43,9 @@ int main(void)
 {
     UBYTE *table_raw = NULL, *tramp_raw = NULL;
     ULONG table_page, tramp_page;
-    ULONG *root, *ptr, *pte, *ptr_log;
+    ULONG *root, *ptr, *pte, *ptr_log, *pte_log;
     ULONG srp[2];
-    ULONG ri, pi, ti, lri;
+    ULONG ri, pi, ti, lri, lpi;
     APTR old_super;
     LONG rc = 20;
 
@@ -69,6 +69,7 @@ int main(void)
     ptr = (ULONG *)(table_page + 512UL);
     pte = (ULONG *)(table_page + 1024UL);
     ptr_log = (ULONG *)(table_page + 1280UL);
+    pte_log = (ULONG *)(table_page + 1792UL);
 
     CopyMem(m68kdeb_pmmu_smoke_blob, (APTR)tramp_page,
             (ULONG)m68kdeb_pmmu_smoke_blob_len);
@@ -78,15 +79,18 @@ int main(void)
     pi = (tramp_page >> PTR_INDEX_SHIFT) & (PTR_TABLE_SIZE - 1UL);
     ti = (tramp_page >> PAGE_INDEX_SHIFT) & (PAGE_TABLE_SIZE - 1UL);
     lri = (LOGICAL_ALIAS_PAGE >> ROOT_INDEX_SHIFT) & (ROOT_TABLE_SIZE - 1UL);
+    lpi = (LOGICAL_ALIAS_PAGE >> PTR_INDEX_SHIFT) & (PTR_TABLE_SIZE - 1UL);
 
     root[ri] = ((ULONG)ptr & 0xffffff00UL) | TABLE_DESC;
     ptr[pi] = ((ULONG)pte & 0xffffff00UL) | TABLE_DESC;
     pte[ti] = (tramp_page & 0xfffff000UL) | PAGE_DESC;
 
-    /* Single experimental delta from the known-good baseline: add a second
-     * valid root descriptor. Its pointer table remains entirely zero and is
-     * never accessed by the identity-only trampoline. */
+    /* Preserve the passing second-root experiment and add exactly one new
+     * descriptor level: a valid pointer descriptor. The logical page table
+     * itself remains completely zero, and the identity-only trampoline never
+     * accesses the low logical alias. */
     root[lri] = ((ULONG)ptr_log & 0xffffff00UL) | TABLE_DESC;
+    ptr_log[lpi] = ((ULONG)pte_log & 0xffffff00UL) | TABLE_DESC;
 
     srp[0] = 0x80000002UL;
     srp[1] = (ULONG)root;
@@ -95,11 +99,11 @@ int main(void)
            table_page, tramp_page, ri, pi, ti);
     Printf("srp=%08lx:%08lx root=%08lx ptr=%08lx pte=%08lx\n",
            srp[0], srp[1], root[ri], ptr[pi], pte[ti]);
-    Printf("root_only_test lri=%lu logical_root=%08lx ptr_log=%08lx\n",
-           lri, root[lri], (ULONG)ptr_log);
+    Printf("pointer_test lri=%lu lpi=%lu logical_root=%08lx logical_ptr=%08lx pte_log=%08lx\n",
+           lri, lpi, root[lri], ptr_log[lpi], (ULONG)pte_log);
 
     marker("SYS:m1-3b4b6b-pmmu-armed.marker",
-           "PMMU second-root-only isolation armed\n");
+           "PMMU second-pointer isolation armed\n");
 
     Disable();
     old_super = SuperState();
@@ -110,7 +114,7 @@ int main(void)
     Printf("M68KDEB_PMMU_SMOKE_RETURN rc=%ld\n", rc);
     if (rc == 0) {
         marker("SYS:m1-3b4b6b-pmmu-returned.marker", "PMMU smoke returned\n");
-        marker("SYS:m1-3b4b6b-pmmu-pass.marker", "PMMU second-root-only isolation passed\n");
+        marker("SYS:m1-3b4b6b-pmmu-pass.marker", "PMMU second-pointer isolation passed\n");
         Printf("M68KDEB_PMMU_SMOKE_PASS\n");
     } else {
         marker("SYS:m1-3b4b6b-pmmu-fail.marker", "PMMU smoke returned failure\n");
