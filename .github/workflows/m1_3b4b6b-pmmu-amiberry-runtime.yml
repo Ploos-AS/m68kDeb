@@ -45,6 +45,12 @@ jobs:
           cmake --build /tmp/SDL3_image/build -j2
           cmake --install /tmp/SDL3_image/build
           git clone --depth 1 --branch v8.3.0 https://github.com/BlitterStudio/amiberry.git /tmp/amiberry
+          # Amiberry v8.3.0 uses the pre-final SDL3 type name here. SDL 3.2.x
+          # exposes SDL_RendererLogicalPresentation, matching the API used by
+          # SDL_GetRenderLogicalPresentation. Keep this CI-only compatibility
+          # patch narrow so the emulator core itself remains otherwise stock.
+          grep -Fq 'SDL_LogicalPresentation lmode' /tmp/amiberry/src/osdep/sdl_renderer.cpp
+          sed -i 's/SDL_LogicalPresentation lmode/SDL_RendererLogicalPresentation lmode/' /tmp/amiberry/src/osdep/sdl_renderer.cpp
           cmake -S /tmp/amiberry -B /tmp/amiberry/build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH=/tmp/sdl3 \
