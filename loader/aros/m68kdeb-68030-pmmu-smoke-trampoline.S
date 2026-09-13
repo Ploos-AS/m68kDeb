@@ -33,12 +33,13 @@ m68kdeb_68030_pmmu_smoke_entry:
 	movel	#M68KDEB_LOGICAL_ALIAS_PAGE,%a0
 	ptestr	#6,%a0@,#7
 
-	/* On 68030/68851 syntax MMUSR is moved to memory, not directly to a data
-	 * register. Store it in our relocation-free scratch longword, then load it
-	 * normally for the existing pass/fail mask. */
+	/* GNU m68k syntax names the 68030 MMUSR as PSR. It is a 16-bit PMMU
+	 * status register, so move it to a word-sized relocation-free scratch
+	 * slot before applying the existing invalid/bus/limit mask. */
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_mmusr),%a0
-	pmove	%mmusr,%a0@
-	movel	%a0@,%d0
+	pmove	%psr,%a0@
+	moveq	#0,%d0
+	movew	%a0@,%d0
 	movel	%d0,%d1
 	andil	#0x0000c400,%d0
 	bne	m68kdeb_68030_pmmu_smoke_fail
@@ -59,6 +60,6 @@ m68kdeb_68030_pmmu_smoke_tc:
 	.long	0x82c07760
 	.long	0x00000000
 m68kdeb_68030_pmmu_smoke_mmusr:
-	.long	0x00000000
+	.word	0x0000
 
 m68kdeb_68030_pmmu_smoke_end:
