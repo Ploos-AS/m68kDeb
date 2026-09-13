@@ -1,0 +1,13 @@
+config_description=M1.3b.4b.6b 68030 PMMU smoke (Amiberry)
+config_hardware=true
+config_host=true
+use_gui=no
+cpu_model=68030
+cpu_compatible=true
+cpu_speed=real
+chipmem_size=4
+fastmem_size=8
+kickstart_rom_file=out/m1-3b4b6b-pmmu/rom/aros-rom.bin
+kickstart_ext_rom_file=out/m1-3b4b6b-pmmu/rom/aros-ext.bin
+filesystem2=rw,DH0:System:out/m1-3b4b6b-pmmu/aros-root,0
+uaehf0=dir,rw,DH0:System:out/m1-3b4b6b-pmmu/aros-root,0
