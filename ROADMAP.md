@@ -1,5 +1,18 @@
 # m68kDeb roadmap
 
+## Emulator / runtime target matrix
+
+m68kDeb explicitly targets multiple emulator families so that qualification can cover both machine-accurate profiles and practical virtualized/runtime-oriented profiles. Emulator qualification and physical-hardware qualification remain separate.
+
+- **FS-UAE** — Amiga reference target; machine-oriented Amiga qualification.
+- **Amiberry** — Amiga target; complementary modern Amiga runtime/emulation path.
+- **FellowNG** — Amiga target; additional independent Amiga emulator implementation.
+- **Hatari** — Atari ST/TT/Falcon target; hardware-oriented Atari qualification.
+- **ARAnyM** — Atari-compatible 68040 virtual-machine target; fast development/runtime-oriented qualification.
+- **Basilisk II** — Macintosh 68k target; Macintosh runtime/reference qualification.
+
+Support for an emulator does not imply that every CPU, machine or Debian release combination is viable. Each backend gets its own documented capability and qualification matrix as milestones progress.
+
 ## M0 — Foundation & Feasibility
 
 - Define project purpose and non-goals.
@@ -9,6 +22,7 @@
 - Define current Debian Ports target.
 - Establish provenance, checksum and archival rules.
 - Define release manifest schema and qualification terminology.
+- Maintain the explicit emulator/runtime target matrix.
 
 ## M1 — Current Debian on Amiga
 
@@ -43,6 +57,7 @@
 ### M1.5 — Amiga qualification matrix
 
 - Qualify representative 68020+MMU, 68030, 68040 and 68060 profiles where emulation permits.
+- Qualify FS-UAE, Amiberry and FellowNG as distinct emulator backends.
 - Keep emulator and physical-hardware qualification separate.
 
 ## M2 — Historical Debian on Amiga
@@ -54,16 +69,19 @@
 
 ## M3 — Atari
 
-- Qualify ARAnyM development/reference profiles.
+- Qualify Hatari hardware-oriented development/reference profiles.
+- Qualify ARAnyM development/reference profiles as the complementary fast virtual-machine path.
 - Add Atari bootstrap handling.
-- Add TT/Falcon-class profiles.
+- Add TT/Falcon-class profiles where supported by the selected backend.
+- Maintain separate Hatari and ARAnyM capability/qualification matrices.
 - Qualify current and historical release paths.
 
 ## M4 — Macintosh 68k
 
+- Establish Basilisk II as the initial Macintosh 68k emulator/reference backend.
 - Establish emulator/reference hardware matrix.
 - Add Macintosh bootstrap handling.
-- Add representative II/Centris/Quadra-class profiles.
+- Add representative II/Centris/Quadra-class profiles where Basilisk II and Linux/m68k support permit.
 - Qualify current and historical release paths.
 
 ## M5 — Sun-3 / Sun-3x
