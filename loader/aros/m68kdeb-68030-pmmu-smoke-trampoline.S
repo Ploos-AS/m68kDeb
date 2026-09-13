@@ -3,15 +3,17 @@
  *
  * int entry(const ULONG srp[2]);
  *
- * Keep this byte/control-flow shape identical to the original known-PASS
- * smoke. Descriptor-chain isolation belongs in the C harness; changing the
- * trampoline at the same time confounds the PMMU experiment.
+ * The descriptor setup is the known-PASS dual mapping. This experiment adds
+ * one semantic delta only: after TC is enabled, fetch the next instruction
+ * through LOGICAL_ALIAS_PAGE instead of the physical identity mapping.
  */
 
 	.text
 	.balign 4
 	.globl m68kdeb_68030_pmmu_smoke_entry
 	.globl m68kdeb_68030_pmmu_smoke_end
+
+	.equ	M68KDEB_LOGICAL_ALIAS_PAGE, 0x005db000
 
 m68kdeb_68030_pmmu_smoke_entry:
 	.chip	68030
@@ -20,7 +22,10 @@ m68kdeb_68030_pmmu_smoke_entry:
 	pmove	%a0@,%srp
 	pflusha
 	pmove	%a1@,%tc
-	nop
+	movel	#M68KDEB_LOGICAL_ALIAS_PAGE+(m68kdeb_68030_pmmu_smoke_alias-m68kdeb_68030_pmmu_smoke_entry),%a0
+	jmp	%a0@
+
+m68kdeb_68030_pmmu_smoke_alias:
 	pmove	%a1@(4),%tc
 	pflusha
 	moveq	#0,%d0
