@@ -24,7 +24,7 @@ jobs:
       - name: Install Wine runtime dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends wine64 unzip curl xvfb xorriso
+          sudo apt-get install -y --no-install-recommends wine unzip curl xvfb xorriso
           wine --version
 
       - name: Download WinUAE 6.0.3 x64
