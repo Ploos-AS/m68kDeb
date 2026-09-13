@@ -4,8 +4,9 @@
  * int entry(const ULONG srp[2]);
  *
  * The descriptor setup is the known-PASS dual mapping. This experiment adds
- * one semantic delta only: after TC is enabled, fetch the next instruction
- * through LOGICAL_ALIAS_PAGE instead of the physical identity mapping.
+ * one semantic delta only: after TC is enabled, perform a data read through
+ * LOGICAL_ALIAS_PAGE while instruction fetch remains on the physical identity
+ * mapping. The aliased longword must match the physical entry longword.
  */
 
 	.text
@@ -22,13 +23,24 @@ m68kdeb_68030_pmmu_smoke_entry:
 	pmove	%a0@,%srp
 	pflusha
 	pmove	%a1@,%tc
-	movel	#M68KDEB_LOGICAL_ALIAS_PAGE+(m68kdeb_68030_pmmu_smoke_alias-m68kdeb_68030_pmmu_smoke_entry),%a0
-	jmp	%a0@
 
-m68kdeb_68030_pmmu_smoke_alias:
+	/* Keep executing through the physical identity map, but translate one
+	 * data access through the low logical alias. */
+	movel	#M68KDEB_LOGICAL_ALIAS_PAGE,%a0
+	movel	%a0@,%d0
+	lea	%pc@(m68kdeb_68030_pmmu_smoke_entry),%a0
+	cmpl	%a0@,%d0
+	bne	m68kdeb_68030_pmmu_smoke_fail
+
 	pmove	%a1@(4),%tc
 	pflusha
 	moveq	#0,%d0
+	rts
+
+m68kdeb_68030_pmmu_smoke_fail:
+	pmove	%a1@(4),%tc
+	pflusha
+	moveq	#1,%d0
 	rts
 
 	.balign 4
