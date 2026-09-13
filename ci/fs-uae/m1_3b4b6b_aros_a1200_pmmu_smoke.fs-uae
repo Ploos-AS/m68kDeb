@@ -4,7 +4,14 @@ cpu = 68030
 kickstart_file = out/m1-3b4b6b-pmmu/rom/aros-rom.bin
 kickstart_ext_file = out/m1-3b4b6b-pmmu/rom/aros-ext.bin
 uae_cpu_speed = real
-zorro_iii_memory = 65536
+
+# Keep the PMMU smoke code and page tables in 24-bit/Zorro II Fast RAM.
+# The failing runs allocated them from 64 MiB Zorro III RAM at 0x40xxxxxx:
+# data translation and FC=6 PTEST worked there, but actual instruction fetch
+# through a PMMU alias did not. 8 MiB Zorro II Fast RAM is sufficient for
+# this isolated test and tells us whether the failure is specific to the
+# FS-UAE 68030 PMMU + Zorro III instruction-fetch path.
+fast_memory = 8192
 hard_drive_0 = out/m1-3b4b6b-pmmu/aros-root
 hard_drive_0_label = System
 hard_drive_0_read_only = 0
@@ -14,5 +21,5 @@ window_height = 576
 logs_dir = out/m1-3b4b6b-pmmu/logs
 screenshots_dir = out/m1-3b4b6b-pmmu/screenshots
 
-# Isolated from Linux: the guest only enables the 68030 PMMU over one
-# identity-mapped trampoline page, disables it again, and returns to AROS.
+# Isolated from Linux: the guest enables the 68030 PMMU over an
+# identity-mapped trampoline plus one logical alias, then disables it again.
