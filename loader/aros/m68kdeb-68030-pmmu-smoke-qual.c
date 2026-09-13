@@ -45,7 +45,7 @@ int main(void)
     ULONG table_page, tramp_page;
     ULONG *root, *ptr, *pte, *ptr_log, *pte_log;
     ULONG srp[2];
-    ULONG ri, pi, ti, lri, lpi;
+    ULONG ri, pi, ti, lri, lpi, lti;
     APTR old_super;
     LONG rc = 20;
 
@@ -80,17 +80,20 @@ int main(void)
     ti = (tramp_page >> PAGE_INDEX_SHIFT) & (PAGE_TABLE_SIZE - 1UL);
     lri = (LOGICAL_ALIAS_PAGE >> ROOT_INDEX_SHIFT) & (ROOT_TABLE_SIZE - 1UL);
     lpi = (LOGICAL_ALIAS_PAGE >> PTR_INDEX_SHIFT) & (PTR_TABLE_SIZE - 1UL);
+    lti = (LOGICAL_ALIAS_PAGE >> PAGE_INDEX_SHIFT) & (PAGE_TABLE_SIZE - 1UL);
 
     root[ri] = ((ULONG)ptr & 0xffffff00UL) | TABLE_DESC;
     ptr[pi] = ((ULONG)pte & 0xffffff00UL) | TABLE_DESC;
     pte[ti] = (tramp_page & 0xfffff000UL) | PAGE_DESC;
 
-    /* Preserve the passing second-root experiment and add exactly one new
-     * descriptor level: a valid pointer descriptor. The logical page table
-     * itself remains completely zero, and the identity-only trampoline never
-     * accesses the low logical alias. */
+    /* Preserve the passing second-root + second-pointer experiment and add
+     * exactly one new descriptor level: a valid page descriptor mapping the
+     * low logical alias to the same trampoline physical page. The trampoline
+     * still executes only through its physical identity mapping; there is no
+     * logical alias jump in this test. */
     root[lri] = ((ULONG)ptr_log & 0xffffff00UL) | TABLE_DESC;
     ptr_log[lpi] = ((ULONG)pte_log & 0xffffff00UL) | TABLE_DESC;
+    pte_log[lti] = (tramp_page & 0xfffff000UL) | PAGE_DESC;
 
     srp[0] = 0x80000002UL;
     srp[1] = (ULONG)root;
@@ -99,11 +102,11 @@ int main(void)
            table_page, tramp_page, ri, pi, ti);
     Printf("srp=%08lx:%08lx root=%08lx ptr=%08lx pte=%08lx\n",
            srp[0], srp[1], root[ri], ptr[pi], pte[ti]);
-    Printf("pointer_test lri=%lu lpi=%lu logical_root=%08lx logical_ptr=%08lx pte_log=%08lx\n",
-           lri, lpi, root[lri], ptr_log[lpi], (ULONG)pte_log);
+    Printf("pte_test lri=%lu lpi=%lu lti=%lu logical_root=%08lx logical_ptr=%08lx logical_pte=%08lx\n",
+           lri, lpi, lti, root[lri], ptr_log[lpi], pte_log[lti]);
 
     marker("SYS:m1-3b4b6b-pmmu-armed.marker",
-           "PMMU second-pointer isolation armed\n");
+           "PMMU second-page isolation armed\n");
 
     Disable();
     old_super = SuperState();
@@ -114,7 +117,7 @@ int main(void)
     Printf("M68KDEB_PMMU_SMOKE_RETURN rc=%ld\n", rc);
     if (rc == 0) {
         marker("SYS:m1-3b4b6b-pmmu-returned.marker", "PMMU smoke returned\n");
-        marker("SYS:m1-3b4b6b-pmmu-pass.marker", "PMMU second-pointer isolation passed\n");
+        marker("SYS:m1-3b4b6b-pmmu-pass.marker", "PMMU second-page isolation passed\n");
         Printf("M68KDEB_PMMU_SMOKE_PASS\n");
     } else {
         marker("SYS:m1-3b4b6b-pmmu-fail.marker", "PMMU smoke returned failure\n");
