@@ -73,11 +73,17 @@ int main(void)
     tramp_page = align_page((ULONG)tramp_raw);
     mmusr_out = (UWORD *)(tramp_page + PAGE_SIZE - sizeof(UWORD));
 
-    root = (ULONG *)table_page;
-    ptr = (ULONG *)(table_page + 512UL);
-    pte = (ULONG *)(table_page + 1024UL);
-    ptr_log = (ULONG *)(table_page + 1280UL);
-    pte_log = (ULONG *)(table_page + 1792UL);
+    /*
+     * Keep every table on a boundary matching its complete table span.
+     * The 7-bit root/pointer tables are 512 bytes; the 6-bit page tables
+     * are 256 bytes.  This removes alias-table alignment as a PMMU-walk
+     * variable while keeping the entire hierarchy inside one 4 KiB page.
+     */
+    root = (ULONG *)table_page;             /* +0x000, 512-byte aligned */
+    ptr = (ULONG *)(table_page + 512UL);    /* +0x200, 512-byte aligned */
+    pte = (ULONG *)(table_page + 1024UL);   /* +0x400, 256-byte aligned */
+    ptr_log = (ULONG *)(table_page + 1536UL); /* +0x600, 512-byte aligned */
+    pte_log = (ULONG *)(table_page + 2048UL); /* +0x800, 256-byte aligned */
 
     CopyMem(m68kdeb_pmmu_smoke_blob, (APTR)tramp_page,
             (ULONG)m68kdeb_pmmu_smoke_blob_len);
