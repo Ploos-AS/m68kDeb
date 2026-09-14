@@ -3,10 +3,10 @@
  *
  * int entry(const ULONG srp[2], ULONG alias, UWORD *mmusr_out);
  *
- * Diagnostic phase: exercise PTESTR against the logical alias, but stop the
- * table search at level 1.  Motorola documents the PTEST level field as the
- * highest numbered table level to search.  This is the first alias-specific
- * walk after the identity-mapped level-7 control passed.
+ * Diagnostic phase: exercise PTESTR against the logical alias at level 0.
+ * The level-1 alias probe still hung after descriptor-path preflight and table
+ * alignment fixes, so this isolates the earliest possible alias-specific
+ * translation-search step.
  */
 
 	.text
@@ -26,8 +26,8 @@ m68kdeb_68030_pmmu_smoke_entry:
 	pflusha
 	pmove	%a1@,%tc
 
-	/* Alias walk bisection: search only through PMMU table level 1. */
-	ptestr	#5,%a2@,#1
+	/* Alias walk bisection: level 0 only. */
+	ptestr	#5,%a2@,#0
 
 	/* Return to the known-good non-translated environment. */
 	pmove	%a1@(4),%tc
