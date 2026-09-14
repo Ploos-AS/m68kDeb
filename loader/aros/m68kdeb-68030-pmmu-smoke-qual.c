@@ -19,7 +19,7 @@
 #define PAGE_DESC 0x00000019UL
 #define TABLE_ADDR_MASK 0xffffff00UL
 #define PAGE_ADDR_MASK 0xfffff000UL
-#define LOGICAL_ALIAS_PAGE 0x005db000UL
+#define SAME_HIERARCHY_MASK 0xfffc0000UL
 
 extern unsigned char m68kdeb_pmmu_smoke_blob[];
 extern unsigned int m68kdeb_pmmu_smoke_blob_len;
@@ -44,8 +44,8 @@ static LONG marker(const char *path, const char *text)
 int main(void)
 {
     UBYTE *table_raw = NULL, *tramp_raw = NULL;
-    ULONG table_page, tramp_page;
-    ULONG *root, *ptr, *pte, *ptr_log, *pte_log;
+    ULONG table_page, tramp_page, logical_alias;
+    ULONG *root, *ptr, *pte;
     ULONG *alias_ptr_table, *alias_pte_table;
     ULONG alias_root_desc, alias_ptr_desc, alias_pte_desc;
     UWORD *mmusr_out;
@@ -73,17 +73,9 @@ int main(void)
     tramp_page = align_page((ULONG)tramp_raw);
     mmusr_out = (UWORD *)(tramp_page + PAGE_SIZE - sizeof(UWORD));
 
-    /*
-     * Keep every table on a boundary matching its complete table span.
-     * The 7-bit root/pointer tables are 512 bytes; the 6-bit page tables
-     * are 256 bytes.  This removes alias-table alignment as a PMMU-walk
-     * variable while keeping the entire hierarchy inside one 4 KiB page.
-     */
     root = (ULONG *)table_page;             /* +0x000, 512-byte aligned */
     ptr = (ULONG *)(table_page + 512UL);    /* +0x200, 512-byte aligned */
     pte = (ULONG *)(table_page + 1024UL);   /* +0x400, 256-byte aligned */
-    ptr_log = (ULONG *)(table_page + 1536UL); /* +0x600, 512-byte aligned */
-    pte_log = (ULONG *)(table_page + 2048UL); /* +0x800, 256-byte aligned */
 
     CopyMem(m68kdeb_pmmu_smoke_blob, (APTR)tramp_page,
             (ULONG)m68kdeb_pmmu_smoke_blob_len);
@@ -93,30 +85,34 @@ int main(void)
     ri = (tramp_page >> ROOT_INDEX_SHIFT) & (ROOT_TABLE_SIZE - 1UL);
     pi = (tramp_page >> PTR_INDEX_SHIFT) & (PTR_TABLE_SIZE - 1UL);
     ti = (tramp_page >> PAGE_INDEX_SHIFT) & (PAGE_TABLE_SIZE - 1UL);
-    lri = (LOGICAL_ALIAS_PAGE >> ROOT_INDEX_SHIFT) & (ROOT_TABLE_SIZE - 1UL);
-    lpi = (LOGICAL_ALIAS_PAGE >> PTR_INDEX_SHIFT) & (PTR_TABLE_SIZE - 1UL);
-    lti = (LOGICAL_ALIAS_PAGE >> PAGE_INDEX_SHIFT) & (PAGE_TABLE_SIZE - 1UL);
+
+    /*
+     * Keep TIA (bits 31..25) and TIB (bits 24..18) identical to the
+     * trampoline mapping, but select a different TIC (bits 17..12).
+     * This creates a genuine logical alias without introducing another
+     * root or pointer descriptor/table into the PMMU walk.
+     */
+    lti = (ti + 1UL) & (PAGE_TABLE_SIZE - 1UL);
+    logical_alias = (tramp_page & SAME_HIERARCHY_MASK) |
+                    (lti << PAGE_INDEX_SHIFT);
+    lri = (logical_alias >> ROOT_INDEX_SHIFT) & (ROOT_TABLE_SIZE - 1UL);
+    lpi = (logical_alias >> PTR_INDEX_SHIFT) & (PTR_TABLE_SIZE - 1UL);
+    lti = (logical_alias >> PAGE_INDEX_SHIFT) & (PAGE_TABLE_SIZE - 1UL);
+
+    if (lri != ri || lpi != pi || lti == ti) {
+        Printf("FAIL same-hierarchy alias ri=%lu/%lu pi=%lu/%lu ti=%lu/%lu\n",
+               ri, lri, pi, lpi, ti, lti);
+        marker("SYS:m1-3b4b6b-pmmu-alias-path-fail.marker",
+               "Same-hierarchy alias derivation failed\n");
+        goto out;
+    }
 
     root[ri] = ((ULONG)ptr & TABLE_ADDR_MASK) | TABLE_DESC;
     ptr[pi] = ((ULONG)pte & TABLE_ADDR_MASK) | TABLE_DESC;
     pte[ti] = (tramp_page & PAGE_ADDR_MASK) | PAGE_DESC;
-
-    if (lri != ri) {
-        root[lri] = ((ULONG)ptr_log & TABLE_ADDR_MASK) | TABLE_DESC;
-        ptr_log[lpi] = ((ULONG)pte_log & TABLE_ADDR_MASK) | TABLE_DESC;
-        pte_log[lti] = (tramp_page & PAGE_ADDR_MASK) | PAGE_DESC;
-        alias_ptr_table = ptr_log;
-        alias_pte_table = pte_log;
-    } else if (lpi != pi) {
-        ptr[lpi] = ((ULONG)pte_log & TABLE_ADDR_MASK) | TABLE_DESC;
-        pte_log[lti] = (tramp_page & PAGE_ADDR_MASK) | PAGE_DESC;
-        alias_ptr_table = ptr;
-        alias_pte_table = pte_log;
-    } else {
-        pte[lti] = (tramp_page & PAGE_ADDR_MASK) | PAGE_DESC;
-        alias_ptr_table = ptr;
-        alias_pte_table = pte;
-    }
+    pte[lti] = (tramp_page & PAGE_ADDR_MASK) | PAGE_DESC;
+    alias_ptr_table = ptr;
+    alias_pte_table = pte;
 
     CacheClearU();
 
@@ -131,8 +127,8 @@ int main(void)
            table_page, tramp_page, ri, pi, ti);
     Printf("srp=%08lx:%08lx root=%08lx ptr=%08lx pte=%08lx\n",
            srp[0], srp[1], root[ri], ptr[pi], pte[ti]);
-    Printf("alias=0x%08lx lri=%lu lpi=%lu lti=%lu shared_root=%lu shared_ptr=%lu\n",
-           (ULONG)LOGICAL_ALIAS_PAGE, lri, lpi, lti,
+    Printf("same_root_ptr_alias=0x%08lx lri=%lu lpi=%lu lti=%lu shared_root=%lu shared_ptr=%lu\n",
+           logical_alias, lri, lpi, lti,
            (ULONG)(lri == ri), (ULONG)(lri == ri && lpi == pi));
     Printf("alias_path root=%08lx ptr=%08lx pte=%08lx ptr_base=%08lx pte_base=%08lx target=%08lx\n",
            alias_root_desc, alias_ptr_desc, alias_pte_desc,
@@ -169,26 +165,29 @@ int main(void)
     }
 
     marker("SYS:m1-3b4b6b-pmmu-alias-path-pass.marker",
-           "Alias descriptor path preflight passed\n");
-    marker("SYS:m1-3b4b6b-pmmu-armed.marker", "PMMU alias PTESTR/PSR probe armed\n");
+           "Same-root/same-pointer alias descriptor path preflight passed\n");
+    marker("SYS:m1-3b4b6b-pmmu-armed.marker",
+           "PMMU same-hierarchy alias PTESTR level-0 probe armed\n");
 
     Disable();
     old_super = SuperState();
-    rc = ((smoke_fn_t)tramp_page)(srp, LOGICAL_ALIAS_PAGE, mmusr_out);
+    rc = ((smoke_fn_t)tramp_page)(srp, logical_alias, mmusr_out);
     if (old_super) UserState(old_super);
     Enable();
 
     Printf("M68KDEB_PMMU_SMOKE_RETURN rc=%ld mmusr=%04lx\n",
            rc, (ULONG)*mmusr_out);
     if (rc == 0) {
-        marker("SYS:m1-3b4b6b-pmmu-ptest-pass.marker", "PTESTR completed and 68030 PSR/MMUSR captured\n");
+        marker("SYS:m1-3b4b6b-pmmu-ptest-pass.marker",
+               "Same-hierarchy alias PTESTR level 0 completed\n");
         marker("SYS:m1-3b4b6b-pmmu-returned.marker", "PMMU smoke returned\n");
         marker("SYS:m1-3b4b6b-pmmu-pass.marker", "PMMU smoke passed\n");
         Printf("M68KDEB_PMMU_ALIAS_PTEST_PASS mmusr=%04lx\n",
                (ULONG)*mmusr_out);
         Printf("M68KDEB_PMMU_SMOKE_PASS\n");
     } else {
-        marker("SYS:m1-3b4b6b-pmmu-fail.marker", "PMMU alias PTESTR probe failed\n");
+        marker("SYS:m1-3b4b6b-pmmu-fail.marker",
+               "PMMU same-hierarchy alias PTESTR probe failed\n");
     }
 
 out:
