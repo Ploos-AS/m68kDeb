@@ -65,9 +65,14 @@ int main(void)
 
     table_page = align_page((ULONG)table_raw);
     tramp_page = align_page((ULONG)tramp_raw);
+
+    /* Preserve the exact known-PASS physical chain locations. */
     root = (ULONG *)table_page;
     ptr = (ULONG *)(table_page + 512UL);
     pte = (ULONG *)(table_page + 1024UL);
+
+    /* Spare tables used only when the alias needs a genuinely different
+     * hierarchy level. They must never replace a live shared descriptor. */
     ptr_log = (ULONG *)(table_page + 1280UL);
     pte_log = (ULONG *)(table_page + 1792UL);
 
@@ -82,16 +87,29 @@ int main(void)
     lpi = (LOGICAL_ALIAS_PAGE >> PTR_INDEX_SHIFT) & (PTR_TABLE_SIZE - 1UL);
     lti = (LOGICAL_ALIAS_PAGE >> PAGE_INDEX_SHIFT) & (PAGE_TABLE_SIZE - 1UL);
 
-    /* Keep the known-good physical chain byte-for-byte unchanged. */
+    /* Known-good physical chain: keep this byte-for-byte equivalent. */
     root[ri] = ((ULONG)ptr & 0xffffff00UL) | TABLE_DESC;
     ptr[pi] = ((ULONG)pte & 0xffffff00UL) | TABLE_DESC;
     pte[ti] = (tramp_page & 0xfffff000UL) | PAGE_DESC;
 
-    /* Add one complete logical alias chain, but do not access it yet. This
-     * isolates table-shape effects from translated data or instruction fetch. */
-    root[lri] = ((ULONG)ptr_log & 0xffffff00UL) | TABLE_DESC;
-    ptr_log[lpi] = ((ULONG)pte_log & 0xffffff00UL) | TABLE_DESC;
-    pte_log[lti] = (tramp_page & 0xfffff000UL) | PAGE_DESC;
+    /* Merge the inert alias into the existing hierarchy instead of blindly
+     * installing a second root chain. For low Amiga addresses the alias and
+     * trampoline can share root index 0; overwriting root[ri] would disconnect
+     * the known-good physical path as soon as translation is enabled. */
+    if (lri != ri) {
+        root[lri] = ((ULONG)ptr_log & 0xffffff00UL) | TABLE_DESC;
+        ptr_log[lpi] = ((ULONG)pte_log & 0xffffff00UL) | TABLE_DESC;
+        pte_log[lti] = (tramp_page & 0xfffff000UL) | PAGE_DESC;
+    } else if (lpi != pi) {
+        ptr[lpi] = ((ULONG)pte_log & 0xffffff00UL) | TABLE_DESC;
+        pte_log[lti] = (tramp_page & 0xfffff000UL) | PAGE_DESC;
+    } else {
+        /* Same root and pointer table: both mappings belong in the same PTE. */
+        pte[lti] = (tramp_page & 0xfffff000UL) | PAGE_DESC;
+    }
+
+    /* Flush descriptor writes before enabling translation. */
+    CacheClearU();
 
     srp[0] = 0x80000002UL;
     srp[1] = (ULONG)root;
@@ -100,11 +118,11 @@ int main(void)
            table_page, tramp_page, ri, pi, ti);
     Printf("srp=%08lx:%08lx root=%08lx ptr=%08lx pte=%08lx\n",
            srp[0], srp[1], root[ri], ptr[pi], pte[ti]);
-    Printf("alias=0x%08lx lri=%lu lpi=%lu lti=%lu root=%08lx ptr=%08lx pte=%08lx\n",
+    Printf("alias=0x%08lx lri=%lu lpi=%lu lti=%lu shared_root=%lu shared_ptr=%lu\n",
            (ULONG)LOGICAL_ALIAS_PAGE, lri, lpi, lti,
-           root[lri], ptr_log[lpi], pte_log[lti]);
+           (ULONG)(lri == ri), (ULONG)(lri == ri && lpi == pi));
 
-    marker("SYS:m1-3b4b6b-pmmu-armed.marker", "PMMU smoke with inert alias armed\n");
+    marker("SYS:m1-3b4b6b-pmmu-armed.marker", "PMMU smoke with merged inert alias armed\n");
 
     Disable();
     old_super = SuperState();
@@ -114,7 +132,7 @@ int main(void)
 
     Printf("M68KDEB_PMMU_SMOKE_RETURN rc=%ld\n", rc);
     if (rc == 0) {
-        marker("SYS:m1-3b4b6b-pmmu-alias-map-pass.marker", "inert alias mapping survived\n");
+        marker("SYS:m1-3b4b6b-pmmu-alias-map-pass.marker", "merged inert alias mapping survived\n");
         marker("SYS:m1-3b4b6b-pmmu-returned.marker", "PMMU smoke returned\n");
         marker("SYS:m1-3b4b6b-pmmu-pass.marker", "PMMU smoke passed\n");
         Printf("M68KDEB_PMMU_ALIAS_MAP_PASS\n");
