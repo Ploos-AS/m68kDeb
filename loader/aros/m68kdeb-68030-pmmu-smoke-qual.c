@@ -22,7 +22,7 @@
 extern unsigned char m68kdeb_pmmu_smoke_blob[];
 extern unsigned int m68kdeb_pmmu_smoke_blob_len;
 
-typedef LONG (*smoke_fn_t)(ULONG *srp);
+typedef LONG (*smoke_fn_t)(ULONG *srp, ULONG alias, ULONG expected);
 
 static ULONG align_page(ULONG p)
 {
@@ -42,7 +42,7 @@ static LONG marker(const char *path, const char *text)
 int main(void)
 {
     UBYTE *table_raw = NULL, *tramp_raw = NULL;
-    ULONG table_page, tramp_page;
+    ULONG table_page, tramp_page, expected;
     ULONG *root, *ptr, *pte, *ptr_log, *pte_log;
     ULONG srp[2];
     ULONG ri, pi, ti, lri, lpi, lti;
@@ -66,19 +66,16 @@ int main(void)
     table_page = align_page((ULONG)table_raw);
     tramp_page = align_page((ULONG)tramp_raw);
 
-    /* Preserve the exact known-PASS physical chain locations. */
     root = (ULONG *)table_page;
     ptr = (ULONG *)(table_page + 512UL);
     pte = (ULONG *)(table_page + 1024UL);
-
-    /* Spare tables used only when the alias needs a genuinely different
-     * hierarchy level. They must never replace a live shared descriptor. */
     ptr_log = (ULONG *)(table_page + 1280UL);
     pte_log = (ULONG *)(table_page + 1792UL);
 
     CopyMem(m68kdeb_pmmu_smoke_blob, (APTR)tramp_page,
             (ULONG)m68kdeb_pmmu_smoke_blob_len);
     CacheClearU();
+    expected = *((volatile ULONG *)tramp_page);
 
     ri = (tramp_page >> ROOT_INDEX_SHIFT) & (ROOT_TABLE_SIZE - 1UL);
     pi = (tramp_page >> PTR_INDEX_SHIFT) & (PTR_TABLE_SIZE - 1UL);
@@ -87,15 +84,10 @@ int main(void)
     lpi = (LOGICAL_ALIAS_PAGE >> PTR_INDEX_SHIFT) & (PTR_TABLE_SIZE - 1UL);
     lti = (LOGICAL_ALIAS_PAGE >> PAGE_INDEX_SHIFT) & (PAGE_TABLE_SIZE - 1UL);
 
-    /* Known-good physical chain: keep this byte-for-byte equivalent. */
     root[ri] = ((ULONG)ptr & 0xffffff00UL) | TABLE_DESC;
     ptr[pi] = ((ULONG)pte & 0xffffff00UL) | TABLE_DESC;
     pte[ti] = (tramp_page & 0xfffff000UL) | PAGE_DESC;
 
-    /* Merge the inert alias into the existing hierarchy instead of blindly
-     * installing a second root chain. For low Amiga addresses the alias and
-     * trampoline can share root index 0; overwriting root[ri] would disconnect
-     * the known-good physical path as soon as translation is enabled. */
     if (lri != ri) {
         root[lri] = ((ULONG)ptr_log & 0xffffff00UL) | TABLE_DESC;
         ptr_log[lpi] = ((ULONG)pte_log & 0xffffff00UL) | TABLE_DESC;
@@ -104,11 +96,9 @@ int main(void)
         ptr[lpi] = ((ULONG)pte_log & 0xffffff00UL) | TABLE_DESC;
         pte_log[lti] = (tramp_page & 0xfffff000UL) | PAGE_DESC;
     } else {
-        /* Same root and pointer table: both mappings belong in the same PTE. */
         pte[lti] = (tramp_page & 0xfffff000UL) | PAGE_DESC;
     }
 
-    /* Flush descriptor writes before enabling translation. */
     CacheClearU();
 
     srp[0] = 0x80000002UL;
@@ -118,27 +108,27 @@ int main(void)
            table_page, tramp_page, ri, pi, ti);
     Printf("srp=%08lx:%08lx root=%08lx ptr=%08lx pte=%08lx\n",
            srp[0], srp[1], root[ri], ptr[pi], pte[ti]);
-    Printf("alias=0x%08lx lri=%lu lpi=%lu lti=%lu shared_root=%lu shared_ptr=%lu\n",
-           (ULONG)LOGICAL_ALIAS_PAGE, lri, lpi, lti,
+    Printf("alias=0x%08lx expected=%08lx lri=%lu lpi=%lu lti=%lu shared_root=%lu shared_ptr=%lu\n",
+           (ULONG)LOGICAL_ALIAS_PAGE, expected, lri, lpi, lti,
            (ULONG)(lri == ri), (ULONG)(lri == ri && lpi == pi));
 
-    marker("SYS:m1-3b4b6b-pmmu-armed.marker", "PMMU smoke with merged inert alias armed\n");
+    marker("SYS:m1-3b4b6b-pmmu-armed.marker", "PMMU translated alias data-read armed\n");
 
     Disable();
     old_super = SuperState();
-    rc = ((smoke_fn_t)tramp_page)(srp);
+    rc = ((smoke_fn_t)tramp_page)(srp, LOGICAL_ALIAS_PAGE, expected);
     if (old_super) UserState(old_super);
     Enable();
 
     Printf("M68KDEB_PMMU_SMOKE_RETURN rc=%ld\n", rc);
     if (rc == 0) {
-        marker("SYS:m1-3b4b6b-pmmu-alias-map-pass.marker", "merged inert alias mapping survived\n");
+        marker("SYS:m1-3b4b6b-pmmu-alias-read-pass.marker", "translated alias data read matched physical trampoline\n");
         marker("SYS:m1-3b4b6b-pmmu-returned.marker", "PMMU smoke returned\n");
         marker("SYS:m1-3b4b6b-pmmu-pass.marker", "PMMU smoke passed\n");
-        Printf("M68KDEB_PMMU_ALIAS_MAP_PASS\n");
+        Printf("M68KDEB_PMMU_ALIAS_READ_PASS\n");
         Printf("M68KDEB_PMMU_SMOKE_PASS\n");
     } else {
-        marker("SYS:m1-3b4b6b-pmmu-fail.marker", "PMMU smoke returned failure\n");
+        marker("SYS:m1-3b4b6b-pmmu-fail.marker", "PMMU translated alias data read failed\n");
     }
 
 out:
