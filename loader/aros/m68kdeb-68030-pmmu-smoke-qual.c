@@ -17,6 +17,8 @@
 #define PAGE_INDEX_SHIFT 12UL
 #define TABLE_DESC 0x0000000aUL
 #define PAGE_DESC 0x00000019UL
+#define TABLE_ADDR_MASK 0xffffff00UL
+#define PAGE_ADDR_MASK 0xfffff000UL
 #define LOGICAL_ALIAS_PAGE 0x005db000UL
 
 extern unsigned char m68kdeb_pmmu_smoke_blob[];
@@ -44,6 +46,8 @@ int main(void)
     UBYTE *table_raw = NULL, *tramp_raw = NULL;
     ULONG table_page, tramp_page;
     ULONG *root, *ptr, *pte, *ptr_log, *pte_log;
+    ULONG *alias_ptr_table, *alias_pte_table;
+    ULONG alias_root_desc, alias_ptr_desc, alias_pte_desc;
     UWORD *mmusr_out;
     ULONG srp[2];
     ULONG ri, pi, ti, lri, lpi, lti;
@@ -87,25 +91,35 @@ int main(void)
     lpi = (LOGICAL_ALIAS_PAGE >> PTR_INDEX_SHIFT) & (PTR_TABLE_SIZE - 1UL);
     lti = (LOGICAL_ALIAS_PAGE >> PAGE_INDEX_SHIFT) & (PAGE_TABLE_SIZE - 1UL);
 
-    root[ri] = ((ULONG)ptr & 0xffffff00UL) | TABLE_DESC;
-    ptr[pi] = ((ULONG)pte & 0xffffff00UL) | TABLE_DESC;
-    pte[ti] = (tramp_page & 0xfffff000UL) | PAGE_DESC;
+    root[ri] = ((ULONG)ptr & TABLE_ADDR_MASK) | TABLE_DESC;
+    ptr[pi] = ((ULONG)pte & TABLE_ADDR_MASK) | TABLE_DESC;
+    pte[ti] = (tramp_page & PAGE_ADDR_MASK) | PAGE_DESC;
 
     if (lri != ri) {
-        root[lri] = ((ULONG)ptr_log & 0xffffff00UL) | TABLE_DESC;
-        ptr_log[lpi] = ((ULONG)pte_log & 0xffffff00UL) | TABLE_DESC;
-        pte_log[lti] = (tramp_page & 0xfffff000UL) | PAGE_DESC;
+        root[lri] = ((ULONG)ptr_log & TABLE_ADDR_MASK) | TABLE_DESC;
+        ptr_log[lpi] = ((ULONG)pte_log & TABLE_ADDR_MASK) | TABLE_DESC;
+        pte_log[lti] = (tramp_page & PAGE_ADDR_MASK) | PAGE_DESC;
+        alias_ptr_table = ptr_log;
+        alias_pte_table = pte_log;
     } else if (lpi != pi) {
-        ptr[lpi] = ((ULONG)pte_log & 0xffffff00UL) | TABLE_DESC;
-        pte_log[lti] = (tramp_page & 0xfffff000UL) | PAGE_DESC;
+        ptr[lpi] = ((ULONG)pte_log & TABLE_ADDR_MASK) | TABLE_DESC;
+        pte_log[lti] = (tramp_page & PAGE_ADDR_MASK) | PAGE_DESC;
+        alias_ptr_table = ptr;
+        alias_pte_table = pte_log;
     } else {
-        pte[lti] = (tramp_page & 0xfffff000UL) | PAGE_DESC;
+        pte[lti] = (tramp_page & PAGE_ADDR_MASK) | PAGE_DESC;
+        alias_ptr_table = ptr;
+        alias_pte_table = pte;
     }
 
     CacheClearU();
 
     srp[0] = 0x80000002UL;
     srp[1] = (ULONG)root;
+
+    alias_root_desc = root[lri];
+    alias_ptr_desc = alias_ptr_table[lpi];
+    alias_pte_desc = alias_pte_table[lti];
 
     Printf("table=0x%08lx tramp=0x%08lx ri=%lu pi=%lu ti=%lu\n",
            table_page, tramp_page, ri, pi, ti);
@@ -114,7 +128,42 @@ int main(void)
     Printf("alias=0x%08lx lri=%lu lpi=%lu lti=%lu shared_root=%lu shared_ptr=%lu\n",
            (ULONG)LOGICAL_ALIAS_PAGE, lri, lpi, lti,
            (ULONG)(lri == ri), (ULONG)(lri == ri && lpi == pi));
+    Printf("alias_path root=%08lx ptr=%08lx pte=%08lx ptr_base=%08lx pte_base=%08lx target=%08lx\n",
+           alias_root_desc, alias_ptr_desc, alias_pte_desc,
+           (ULONG)alias_ptr_table, (ULONG)alias_pte_table, tramp_page);
 
+    if ((alias_root_desc & TABLE_ADDR_MASK) !=
+            ((ULONG)alias_ptr_table & TABLE_ADDR_MASK) ||
+        (alias_root_desc & 3UL) != 2UL) {
+        Printf("FAIL alias_root_desc=%08lx expected_base=%08lx\n",
+               alias_root_desc, (ULONG)alias_ptr_table);
+        marker("SYS:m1-3b4b6b-pmmu-alias-path-fail.marker",
+               "Alias root descriptor mismatch\n");
+        goto out;
+    }
+
+    if ((alias_ptr_desc & TABLE_ADDR_MASK) !=
+            ((ULONG)alias_pte_table & TABLE_ADDR_MASK) ||
+        (alias_ptr_desc & 3UL) != 2UL) {
+        Printf("FAIL alias_ptr_desc=%08lx expected_base=%08lx\n",
+               alias_ptr_desc, (ULONG)alias_pte_table);
+        marker("SYS:m1-3b4b6b-pmmu-alias-path-fail.marker",
+               "Alias pointer descriptor mismatch\n");
+        goto out;
+    }
+
+    if ((alias_pte_desc & PAGE_ADDR_MASK) !=
+            (tramp_page & PAGE_ADDR_MASK) ||
+        (alias_pte_desc & 3UL) != 1UL) {
+        Printf("FAIL alias_pte_desc=%08lx expected_page=%08lx\n",
+               alias_pte_desc, tramp_page);
+        marker("SYS:m1-3b4b6b-pmmu-alias-path-fail.marker",
+               "Alias page descriptor mismatch\n");
+        goto out;
+    }
+
+    marker("SYS:m1-3b4b6b-pmmu-alias-path-pass.marker",
+           "Alias descriptor path preflight passed\n");
     marker("SYS:m1-3b4b6b-pmmu-armed.marker", "PMMU alias PTESTR/PSR probe armed\n");
 
     Disable();
