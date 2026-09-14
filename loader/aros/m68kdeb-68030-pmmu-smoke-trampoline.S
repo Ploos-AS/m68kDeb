@@ -1,12 +1,12 @@
 /*
- * M1.3b.4b.6b-PMMU: relocation-free MC68030 PMMU alias-read trampoline.
+ * M1.3b.4b.6b-PMMU: relocation-free MC68030 PMMU alias probe trampoline.
  *
- * int entry(const ULONG srp[2], ULONG alias, ULONG expected);
+ * int entry(const ULONG srp[2], ULONG alias, ULONG *mmusr_out);
  *
- * The descriptor hierarchy is prepared by the C harness.  Keep every stack
- * access before TC is enabled: the minimal PMMU table maps the trampoline and
- * alias pages, not the caller's stack page.  Once translation is active the
- * probe touches only mapped addresses and register state.
+ * Do not dereference the translated alias yet.  PTESTR walks the configured
+ * PMMU hierarchy without turning this diagnostic into an ordinary data access.
+ * MMUSR is written to scratch storage inside the identity-mapped trampoline
+ * page, then TC is disabled before stack access / return.
  */
 
 	.text
@@ -20,27 +20,21 @@ m68kdeb_68030_pmmu_smoke_entry:
 	/* Load every caller argument before enabling translation. */
 	movel	4(%sp),%a0		/* SRP descriptor pair */
 	movel	8(%sp),%a2		/* logical alias */
-	movel	12(%sp),%d1		/* expected first longword */
+	movel	12(%sp),%a3		/* identity-mapped MMUSR scratch */
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 
 	pmove	%a0@,%srp
 	pflusha
 	pmove	%a1@,%tc
 
-	/* No stack accesses while TC is active. */
-	movel	%a2@,%d0
-	cmpl	%d1,%d0
-	bne	m68kdeb_68030_pmmu_smoke_mismatch
+	/* Probe supervisor-data translation only; no ordinary alias dereference. */
+	ptestr	#1,%a2@,#7
+	pmove	%mmusr,%a3@
 
+	/* Return to the known-good non-translated environment. */
 	pmove	%a1@(4),%tc
 	pflusha
 	moveq	#0,%d0
-	rts
-
-m68kdeb_68030_pmmu_smoke_mismatch:
-	pmove	%a1@(4),%tc
-	pflusha
-	moveq	#1,%d0
 	rts
 
 	.balign 4
