@@ -29,7 +29,7 @@ m68kdeb_68030_pmmu_smoke_entry:
 	pmove	%a1@,%tc
 
 	/* Probe supervisor-data translation only; no ordinary alias dereference. */
-	ptestr	#1,%a2@,#7
+	ptestr	#5,%a2@,#7
 	pmove	%psr,%a3@
 
 	/* Return to the known-good non-translated environment. */
