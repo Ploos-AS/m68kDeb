@@ -22,7 +22,7 @@
 extern unsigned char m68kdeb_pmmu_smoke_blob[];
 extern unsigned int m68kdeb_pmmu_smoke_blob_len;
 
-typedef LONG (*smoke_fn_t)(ULONG *srp, ULONG alias, ULONG *mmusr_out);
+typedef LONG (*smoke_fn_t)(ULONG *srp, ULONG alias, UWORD *mmusr_out);
 
 static ULONG align_page(ULONG p)
 {
@@ -44,7 +44,7 @@ int main(void)
     UBYTE *table_raw = NULL, *tramp_raw = NULL;
     ULONG table_page, tramp_page;
     ULONG *root, *ptr, *pte, *ptr_log, *pte_log;
-    ULONG *mmusr_out;
+    UWORD *mmusr_out;
     ULONG srp[2];
     ULONG ri, pi, ti, lri, lpi, lti;
     APTR old_super;
@@ -53,7 +53,7 @@ int main(void)
     Printf("M68KDEB_PMMU_SMOKE_START\n");
 
     if (!m68kdeb_pmmu_smoke_blob_len ||
-        m68kdeb_pmmu_smoke_blob_len > PAGE_SIZE - sizeof(ULONG)) {
+        m68kdeb_pmmu_smoke_blob_len > PAGE_SIZE - sizeof(UWORD)) {
         Printf("FAIL blob_len=%lu\n", (ULONG)m68kdeb_pmmu_smoke_blob_len);
         return 20;
     }
@@ -67,7 +67,7 @@ int main(void)
 
     table_page = align_page((ULONG)table_raw);
     tramp_page = align_page((ULONG)tramp_raw);
-    mmusr_out = (ULONG *)(tramp_page + PAGE_SIZE - sizeof(ULONG));
+    mmusr_out = (UWORD *)(tramp_page + PAGE_SIZE - sizeof(UWORD));
 
     root = (ULONG *)table_page;
     ptr = (ULONG *)(table_page + 512UL);
@@ -77,7 +77,7 @@ int main(void)
 
     CopyMem(m68kdeb_pmmu_smoke_blob, (APTR)tramp_page,
             (ULONG)m68kdeb_pmmu_smoke_blob_len);
-    *mmusr_out = 0xffffffffUL;
+    *mmusr_out = 0xffffU;
     CacheClearU();
 
     ri = (tramp_page >> ROOT_INDEX_SHIFT) & (ROOT_TABLE_SIZE - 1UL);
@@ -115,7 +115,7 @@ int main(void)
            (ULONG)LOGICAL_ALIAS_PAGE, lri, lpi, lti,
            (ULONG)(lri == ri), (ULONG)(lri == ri && lpi == pi));
 
-    marker("SYS:m1-3b4b6b-pmmu-armed.marker", "PMMU alias PTESTR/MMUSR probe armed\n");
+    marker("SYS:m1-3b4b6b-pmmu-armed.marker", "PMMU alias PTESTR/PSR probe armed\n");
 
     Disable();
     old_super = SuperState();
@@ -123,12 +123,14 @@ int main(void)
     if (old_super) UserState(old_super);
     Enable();
 
-    Printf("M68KDEB_PMMU_SMOKE_RETURN rc=%ld mmusr=%08lx\n", rc, *mmusr_out);
+    Printf("M68KDEB_PMMU_SMOKE_RETURN rc=%ld mmusr=%04lx\n",
+           rc, (ULONG)*mmusr_out);
     if (rc == 0) {
-        marker("SYS:m1-3b4b6b-pmmu-ptest-pass.marker", "PTESTR completed and MMUSR captured\n");
+        marker("SYS:m1-3b4b6b-pmmu-ptest-pass.marker", "PTESTR completed and 68030 PSR/MMUSR captured\n");
         marker("SYS:m1-3b4b6b-pmmu-returned.marker", "PMMU smoke returned\n");
         marker("SYS:m1-3b4b6b-pmmu-pass.marker", "PMMU smoke passed\n");
-        Printf("M68KDEB_PMMU_ALIAS_PTEST_PASS mmusr=%08lx\n", *mmusr_out);
+        Printf("M68KDEB_PMMU_ALIAS_PTEST_PASS mmusr=%04lx\n",
+               (ULONG)*mmusr_out);
         Printf("M68KDEB_PMMU_SMOKE_PASS\n");
     } else {
         marker("SYS:m1-3b4b6b-pmmu-fail.marker", "PMMU alias PTESTR probe failed\n");
