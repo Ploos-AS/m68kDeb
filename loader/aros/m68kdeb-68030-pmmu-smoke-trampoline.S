@@ -3,11 +3,10 @@
  *
  * int entry(const ULONG srp[2], ULONG alias, UWORD *mmusr_out);
  *
- * Do not dereference the translated alias yet.  PTESTR walks the configured
- * PMMU hierarchy without turning this diagnostic into an ordinary data access.
- * On the MC68030 GNU as exposes MMUSR as the 16-bit PMMU PSR register.  Store
- * that PSR value to scratch inside the identity-mapped trampoline page, then
- * disable TC before any stack access / return.
+ * Diagnostic phase: isolate the page-table walk itself.  PTESTR walks the
+ * configured PMMU hierarchy without an ordinary data access.  Do not read
+ * PSR/MMUSR in this phase; if this sequence returns, PSR capture is the next
+ * variable to test independently.
  */
 
 	.text
@@ -21,16 +20,15 @@ m68kdeb_68030_pmmu_smoke_entry:
 	/* Load every caller argument before enabling translation. */
 	movel	4(%sp),%a0		/* SRP descriptor pair */
 	movel	8(%sp),%a2		/* logical alias */
-	movel	12(%sp),%a3		/* identity-mapped 16-bit PSR/MMUSR scratch */
+	movel	12(%sp),%a3		/* reserved scratch argument; unused in this phase */
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 
 	pmove	%a0@,%srp
 	pflusha
 	pmove	%a1@,%tc
 
-	/* Probe supervisor-data translation only; no ordinary alias dereference. */
+	/* Isolate supervisor-data PTESTR; no alias dereference and no PSR readback. */
 	ptestr	#5,%a2@,#7
-	pmove	%psr,%a3@
 
 	/* Return to the known-good non-translated environment. */
 	pmove	%a1@(4),%tc
