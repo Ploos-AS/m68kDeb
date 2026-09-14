@@ -3,9 +3,10 @@
  *
  * int entry(const ULONG srp[2], ULONG alias, ULONG expected);
  *
- * The descriptor hierarchy is prepared by the C harness.  This step extends
- * the known-good enable/disable control flow by exactly one translated data
- * access.  Translation is disabled on both compare outcomes before returning.
+ * The descriptor hierarchy is prepared by the C harness.  Keep every stack
+ * access before TC is enabled: the minimal PMMU table maps the trampoline and
+ * alias pages, not the caller's stack page.  Once translation is active the
+ * probe touches only mapped addresses and register state.
  */
 
 	.text
@@ -15,16 +16,19 @@
 
 m68kdeb_68030_pmmu_smoke_entry:
 	.chip	68030
-	movel	4(%sp),%a0
+
+	/* Load every caller argument before enabling translation. */
+	movel	4(%sp),%a0		/* SRP descriptor pair */
+	movel	8(%sp),%a2		/* logical alias */
+	movel	12(%sp),%d1		/* expected first longword */
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
+
 	pmove	%a0@,%srp
 	pflusha
 	pmove	%a1@,%tc
 
-	/* One translated data read through the logical alias. */
-	movel	8(%sp),%a0
-	movel	12(%sp),%d1
-	movel	%a0@,%d0
+	/* No stack accesses while TC is active. */
+	movel	%a2@,%d0
 	cmpl	%d1,%d0
 	bne	m68kdeb_68030_pmmu_smoke_mismatch
 
