@@ -1,13 +1,12 @@
 /*
- * M1.3b.4b.6b-PMMU: relocation-free MC68030 PMMU identity-walk probe.
+ * M1.3b.4b.6b-PMMU: relocation-free MC68030 PMMU alias-walk bisection.
  *
  * int entry(const ULONG srp[2], ULONG alias, UWORD *mmusr_out);
  *
- * Diagnostic phase: exercise PTESTR against an address inside the trampoline
- * page itself.  That page is already part of the known-good identity mapping,
- * so this separates generic PTESTR/page-walk behaviour from the logical alias
- * hierarchy.  The alias and scratch arguments remain part of the ABI but are
- * not used in this phase.
+ * Diagnostic phase: exercise PTESTR against the logical alias, but stop the
+ * table search at level 1.  Motorola documents the PTEST level field as the
+ * highest numbered table level to search.  This is the first alias-specific
+ * walk after the identity-mapped level-7 control passed.
  */
 
 	.text
@@ -18,16 +17,17 @@
 m68kdeb_68030_pmmu_smoke_entry:
 	.chip	68030
 
-	/* Load the SRP descriptor and an identity-mapped probe address first. */
+	/* Load all caller data before enabling translation. */
 	movel	4(%sp),%a0		/* SRP descriptor pair */
+	movel	8(%sp),%a2		/* logical alias */
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 
 	pmove	%a0@,%srp
 	pflusha
 	pmove	%a1@,%tc
 
-	/* Probe the known-good identity mapping, not the logical alias path. */
-	ptestr	#5,%a1@,#7
+	/* Alias walk bisection: search only through PMMU table level 1. */
+	ptestr	#5,%a2@,#1
 
 	/* Return to the known-good non-translated environment. */
 	pmove	%a1@(4),%tc
