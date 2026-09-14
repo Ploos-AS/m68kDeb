@@ -1,12 +1,13 @@
 /*
- * M1.3b.4b.6b-PMMU: relocation-free MC68030 PMMU alias probe trampoline.
+ * M1.3b.4b.6b-PMMU: relocation-free MC68030 PMMU control baseline.
  *
  * int entry(const ULONG srp[2], ULONG alias, UWORD *mmusr_out);
  *
- * Diagnostic phase: isolate the page-table walk itself.  PTESTR walks the
- * configured PMMU hierarchy without an ordinary data access.  Do not read
- * PSR/MMUSR in this phase; if this sequence returns, PSR capture is the next
- * variable to test independently.
+ * Diagnostic phase: keep the current SRP/page-table setup, but perform no
+ * PTESTR, alias access, or PSR/MMUSR readback.  This re-validates the known-good
+ * PMMU control path with the current hierarchy: TC enable -> TC disable ->
+ * return.  The alias and scratch arguments remain part of the ABI but are not
+ * used in this phase.
  */
 
 	.text
@@ -17,20 +18,15 @@
 m68kdeb_68030_pmmu_smoke_entry:
 	.chip	68030
 
-	/* Load every caller argument before enabling translation. */
+	/* Load only the SRP descriptor before enabling translation. */
 	movel	4(%sp),%a0		/* SRP descriptor pair */
-	movel	8(%sp),%a2		/* logical alias */
-	movel	12(%sp),%a3		/* reserved scratch argument; unused in this phase */
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 
 	pmove	%a0@,%srp
 	pflusha
 	pmove	%a1@,%tc
 
-	/* Isolate supervisor-data PTESTR; no alias dereference and no PSR readback. */
-	ptestr	#5,%a2@,#7
-
-	/* Return to the known-good non-translated environment. */
+	/* Pure control baseline: no PMMU walk and no translated access. */
 	pmove	%a1@(4),%tc
 	pflusha
 	moveq	#0,%d0
