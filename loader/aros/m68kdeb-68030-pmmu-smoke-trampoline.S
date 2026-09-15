@@ -1,12 +1,14 @@
 /*
- * M1.3b.4b.6b-PMMU: relocation-free MC68030 PMMU alias instruction-fetch probe.
+ * M1.3b.4b.6b-PMMU: relocation-free MC68030 PMMU stage bisect.
  *
  * int entry(const ULONG srp[2], ULONG alias_page, UWORD *stage);
  *
- * Keep the normal AROS runtime, exception vectors and supervisor stack usable
- * while PMMU translation is enabled by transparently translating the complete
- * lower 2 GiB with TT0.  The test alias is deliberately at 0x80000000, outside
- * that transparent window, so its instruction fetch must use the SRP tables.
+ * This diagnostic deliberately returns immediately after TT0, SRP and TC have
+ * been loaded.  It isolates PMMU activation from the subsequent high-half
+ * alias instruction fetch.  A returned stage of 0x1111 proves that the CPU can
+ * enable this exact TT0/SRP/TC configuration and resume through the transparent
+ * lower-half mapping; the next qualification step can then re-enable the alias
+ * jump knowing that the failure is after TC activation.
  */
 
 	.text
@@ -19,14 +21,11 @@ m68kdeb_68030_pmmu_smoke_entry:
 
 	/* Resolve every address before translation is enabled. */
 	movel	4(%sp),%a0		/* SRP descriptor pair */
-	movel	8(%sp),%a2		/* high-half logical alias page */
 	movel	12(%sp),%a4		/* stage word on physical trampoline page */
-	addl	#(m68kdeb_68030_pmmu_alias_entry-m68kdeb_68030_pmmu_smoke_entry),%a2
-	lea	%pc@(m68kdeb_68030_pmmu_physical_resume),%a3
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tt0),%a5
 
-	/* Clear caches, then make all A31=0 accesses physical/transparent. */
+	/* Match the alias probe setup exactly, but do not perform the alias JMP. */
 	movel	#0x00000808,%d0
 	movec	%d0,%cacr
 	pmove	%a5@,%tt0
@@ -35,15 +34,7 @@ m68kdeb_68030_pmmu_smoke_entry:
 	pmove	%a1@,%tc
 	movew	#0x1111,%a4@
 
-	/* 0x80000000 is outside TT0: this fetch must walk the PMMU tables. */
-	jmp	%a2@
-
-m68kdeb_68030_pmmu_alias_entry:
-	movew	#0x2222,%a4@
-	jmp	%a3@
-
-m68kdeb_68030_pmmu_physical_resume:
-	movew	#0x3333,%a4@
+	/* Lower-half execution/data/stack must remain usable through TT0 here. */
 	pmove	%a1@(4),%tc
 	pflusha
 	pmove	%a1@(4),%tt0
@@ -57,11 +48,7 @@ m68kdeb_68030_pmmu_smoke_tc:
 	.long	0x82c07760
 	.long	0x00000000
 
-	/*
-	 * MC68030 TT0: base=0x00, address mask=0x7f, E=1, RWM=1,
-	 * FC mask=7.  Only A31 must match zero, so the lower 2 GiB is
-	 * transparently translated for every function code and read/write access.
-	 */
+	/* Lower 2 GiB transparent for all function codes/read-write accesses. */
 m68kdeb_68030_pmmu_smoke_tt0:
 	.long	0x007f8107
 
