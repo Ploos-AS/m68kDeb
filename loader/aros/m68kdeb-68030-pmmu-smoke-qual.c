@@ -19,7 +19,7 @@
 #define PAGE_DESC 0x00000019UL
 #define TABLE_ADDR_MASK 0xffffff00UL
 #define PAGE_ADDR_MASK 0xfffff000UL
-#define SAME_HIERARCHY_MASK 0xfffc0000UL
+#define LOGICAL_ALIAS 0x80000000UL
 
 extern unsigned char m68kdeb_pmmu_smoke_blob[];
 extern unsigned int m68kdeb_pmmu_smoke_blob_len;
@@ -44,12 +44,12 @@ static LONG marker(const char *path, const char *text)
 int main(void)
 {
     UBYTE *table_raw = NULL, *tramp_raw = NULL;
-    ULONG table_page, tramp_page, logical_alias;
-    ULONG *root, *ptr, *pte;
+    ULONG table_page, tramp_page, logical_alias = LOGICAL_ALIAS;
+    ULONG *root, *alias_ptr, *alias_pte;
     ULONG alias_root_desc, alias_ptr_desc, alias_pte_desc;
     UWORD *scratch;
     ULONG srp[2];
-    ULONG ri, pi, ti, lri, lpi, lti;
+    ULONG lri, lpi, lti;
     APTR old_super;
     LONG rc = 20;
 
@@ -72,57 +72,45 @@ int main(void)
     tramp_page = align_page((ULONG)tramp_raw);
     scratch = (UWORD *)(tramp_page + PAGE_SIZE - sizeof(UWORD));
 
-    root = (ULONG *)table_page;
-    ptr = (ULONG *)(table_page + 512UL);
-    pte = (ULONG *)(table_page + 1024UL);
+    /* TT0 in the trampoline transparently maps the complete lower 2 GiB. */
+    if ((table_page | tramp_page) & 0x80000000UL) {
+        Printf("FAIL qualification memory outside TT0 lower-half window\n");
+        goto out;
+    }
+
+    root = (ULONG *)table_page;                  /* +0x000, 512-byte aligned */
+    alias_ptr = (ULONG *)(table_page + 512UL);  /* +0x200, 512-byte aligned */
+    alias_pte = (ULONG *)(table_page + 1024UL); /* +0x400, 256-byte aligned */
 
     CopyMem(m68kdeb_pmmu_smoke_blob, (APTR)tramp_page,
             (ULONG)m68kdeb_pmmu_smoke_blob_len);
     *scratch = 0xffffU;
     CacheClearU();
 
-    ri = (tramp_page >> ROOT_INDEX_SHIFT) & (ROOT_TABLE_SIZE - 1UL);
-    pi = (tramp_page >> PTR_INDEX_SHIFT) & (PTR_TABLE_SIZE - 1UL);
-    ti = (tramp_page >> PAGE_INDEX_SHIFT) & (PAGE_TABLE_SIZE - 1UL);
-
-    /* Same root and pointer hierarchy, different final page-table slot. */
-    lti = (ti + 1UL) & (PAGE_TABLE_SIZE - 1UL);
-    logical_alias = (tramp_page & SAME_HIERARCHY_MASK) |
-                    (lti << PAGE_INDEX_SHIFT);
     lri = (logical_alias >> ROOT_INDEX_SHIFT) & (ROOT_TABLE_SIZE - 1UL);
     lpi = (logical_alias >> PTR_INDEX_SHIFT) & (PTR_TABLE_SIZE - 1UL);
     lti = (logical_alias >> PAGE_INDEX_SHIFT) & (PAGE_TABLE_SIZE - 1UL);
 
-    if (lri != ri || lpi != pi || lti == ti) {
-        Printf("FAIL same-hierarchy alias ri=%lu/%lu pi=%lu/%lu ti=%lu/%lu\n",
-               ri, lri, pi, lpi, ti, lti);
-        marker("SYS:m1-3b4b6b-pmmu-alias-path-fail.marker",
-               "Same-hierarchy alias derivation failed\n");
-        goto out;
-    }
-
-    root[ri] = ((ULONG)ptr & TABLE_ADDR_MASK) | TABLE_DESC;
-    ptr[pi] = ((ULONG)pte & TABLE_ADDR_MASK) | TABLE_DESC;
-    pte[ti] = (tramp_page & PAGE_ADDR_MASK) | PAGE_DESC;
-    pte[lti] = (tramp_page & PAGE_ADDR_MASK) | PAGE_DESC;
+    root[lri] = ((ULONG)alias_ptr & TABLE_ADDR_MASK) | TABLE_DESC;
+    alias_ptr[lpi] = ((ULONG)alias_pte & TABLE_ADDR_MASK) | TABLE_DESC;
+    alias_pte[lti] = (tramp_page & PAGE_ADDR_MASK) | PAGE_DESC;
     CacheClearU();
 
     srp[0] = 0x80000002UL;
     srp[1] = (ULONG)root;
     alias_root_desc = root[lri];
-    alias_ptr_desc = ptr[lpi];
-    alias_pte_desc = pte[lti];
+    alias_ptr_desc = alias_ptr[lpi];
+    alias_pte_desc = alias_pte[lti];
 
-    Printf("table=0x%08lx tramp=0x%08lx ri=%lu pi=%lu ti=%lu\n",
-           table_page, tramp_page, ri, pi, ti);
-    Printf("same_root_ptr_alias=0x%08lx lri=%lu lpi=%lu lti=%lu\n",
-           logical_alias, lri, lpi, lti);
-    Printf("alias_path root=%08lx ptr=%08lx pte=%08lx target=%08lx\n",
-           alias_root_desc, alias_ptr_desc, alias_pte_desc, tramp_page);
+    Printf("table=0x%08lx tramp=0x%08lx alias=0x%08lx\n",
+           table_page, tramp_page, logical_alias);
+    Printf("alias_path ri=%lu pi=%lu ti=%lu root=%08lx ptr=%08lx pte=%08lx\n",
+           lri, lpi, lti, alias_root_desc, alias_ptr_desc, alias_pte_desc);
+    Printf("tt0_lower_2g_identity=1 target=%08lx\n", tramp_page);
 
-    if ((alias_root_desc & TABLE_ADDR_MASK) != ((ULONG)ptr & TABLE_ADDR_MASK) ||
+    if ((alias_root_desc & TABLE_ADDR_MASK) != ((ULONG)alias_ptr & TABLE_ADDR_MASK) ||
         (alias_root_desc & 3UL) != 2UL ||
-        (alias_ptr_desc & TABLE_ADDR_MASK) != ((ULONG)pte & TABLE_ADDR_MASK) ||
+        (alias_ptr_desc & TABLE_ADDR_MASK) != ((ULONG)alias_pte & TABLE_ADDR_MASK) ||
         (alias_ptr_desc & 3UL) != 2UL ||
         (alias_pte_desc & PAGE_ADDR_MASK) != (tramp_page & PAGE_ADDR_MASK) ||
         (alias_pte_desc & 3UL) != 1UL) {
@@ -133,9 +121,9 @@ int main(void)
     }
 
     marker("SYS:m1-3b4b6b-pmmu-alias-path-pass.marker",
-           "Same-root/same-pointer alias descriptor path preflight passed\n");
+           "High-half alias descriptor path preflight passed\n");
     marker("SYS:m1-3b4b6b-pmmu-armed.marker",
-           "PMMU alias instruction-fetch probe armed\n");
+           "PMMU TT0-isolated alias instruction-fetch probe armed\n");
 
     Disable();
     old_super = SuperState();
@@ -143,8 +131,9 @@ int main(void)
     if (old_super) UserState(old_super);
     Enable();
 
-    Printf("M68KDEB_PMMU_SMOKE_RETURN rc=%ld\n", rc);
-    if (rc == 0) {
+    Printf("M68KDEB_PMMU_SMOKE_RETURN rc=%ld stage=%04lx\n",
+           rc, (ULONG)*scratch);
+    if (rc == 0 && *scratch == 0x3333U) {
         marker("SYS:m1-3b4b6b-pmmu-returned.marker",
                "PMMU alias instruction fetch returned\n");
         marker("SYS:m1-3b4b6b-pmmu-pass.marker",
@@ -152,8 +141,9 @@ int main(void)
         Printf("M68KDEB_PMMU_ALIAS_FETCH_PASS\n");
         Printf("M68KDEB_PMMU_SMOKE_PASS\n");
     } else {
+        rc = 20;
         marker("SYS:m1-3b4b6b-pmmu-fail.marker",
-               "PMMU alias instruction fetch failed\n");
+               "PMMU TT0-isolated alias instruction fetch failed\n");
     }
 
 out:
