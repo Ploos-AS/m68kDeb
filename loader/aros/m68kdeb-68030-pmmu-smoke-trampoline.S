@@ -7,6 +7,10 @@
  * capability needed by the loader instead: fetch one JMP through a logical
  * alias that maps to this same physical trampoline page.  No stack or data
  * access occurs while executing from the alias.
+ *
+ * Match Linux' 68030 MMU-engage sequence by clearing both 68030 caches with
+ * CACR=0x0808 before loading SRP/TC.  This isolates stale-cache state from the
+ * remaining non-identity translation failure.
  */
 
 	.text
@@ -24,6 +28,9 @@ m68kdeb_68030_pmmu_smoke_entry:
 	lea	%pc@(m68kdeb_68030_pmmu_physical_resume),%a3
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 
+	/* Linux arch/m68k/kernel/head.S uses CACR=0x0808 here. */
+	movel	#0x00000808,%d0
+	movec	%d0,%cacr
 	pmove	%a0@,%srp
 	pflusha
 	pmove	%a1@,%tc
@@ -39,6 +46,8 @@ m68kdeb_68030_pmmu_physical_resume:
 	/* Identity mapping is valid here; disable translation before returning. */
 	pmove	%a1@(4),%tc
 	pflusha
+	movel	#0x00000808,%d0
+	movec	%d0,%cacr
 	moveq	#0,%d0
 	rts
 
