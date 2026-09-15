@@ -3,9 +3,10 @@
  *
  * int entry(const ULONG srp[2], ULONG alias, UWORD *mmusr_out);
  *
- * Diagnostic phase: exercise PTESTR at level 0 against a logical alias that
- * shares the trampoline mapping's root and pointer indices and differs only
- * in the final page-table index.  The identity level-0 control passed.
+ * Diagnostic phase: exercise the known-good PTESTR level 7 against a logical
+ * alias that shares the trampoline mapping's root and pointer indices and
+ * differs only in the final page-table index.  Identity PTESTR level 7 passed;
+ * this removes the PTESTR-level variable from the alias-path bisection.
  */
 
 	.text
@@ -25,8 +26,8 @@ m68kdeb_68030_pmmu_smoke_entry:
 	pflusha
 	pmove	%a1@,%tc
 
-	/* Isolate alias translation while keeping the hierarchy path shared. */
-	ptestr	#5,%a2@,#0
+	/* Isolate non-identity alias translation on the shared hierarchy path. */
+	ptestr	#5,%a2@,#7
 
 	/* Return to the known-good non-translated environment. */
 	pmove	%a1@(4),%tc
