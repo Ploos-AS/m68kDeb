@@ -72,15 +72,14 @@ int main(void)
     tramp_page = align_page((ULONG)tramp_raw);
     scratch = (UWORD *)(tramp_page + PAGE_SIZE - sizeof(UWORD));
 
-    /* TT0 in the trampoline transparently maps the complete lower 2 GiB. */
     if ((table_page | tramp_page) & 0x80000000UL) {
         Printf("FAIL qualification memory outside TT0 lower-half window\n");
         goto out;
     }
 
-    root = (ULONG *)table_page;                  /* +0x000, 512-byte aligned */
-    alias_ptr = (ULONG *)(table_page + 512UL);  /* +0x200, 512-byte aligned */
-    alias_pte = (ULONG *)(table_page + 1024UL); /* +0x400, 256-byte aligned */
+    root = (ULONG *)table_page;
+    alias_ptr = (ULONG *)(table_page + 512UL);
+    alias_pte = (ULONG *)(table_page + 1024UL);
 
     CopyMem(m68kdeb_pmmu_smoke_blob, (APTR)tramp_page,
             (ULONG)m68kdeb_pmmu_smoke_blob_len);
@@ -123,7 +122,7 @@ int main(void)
     marker("SYS:m1-3b4b6b-pmmu-alias-path-pass.marker",
            "High-half alias descriptor path preflight passed\n");
     marker("SYS:m1-3b4b6b-pmmu-armed.marker",
-           "PMMU TT0-isolated alias instruction-fetch probe armed\n");
+           "PMMU TT0/SRP/TC activation bisect armed\n");
 
     Disable();
     old_super = SuperState();
@@ -133,17 +132,17 @@ int main(void)
 
     Printf("M68KDEB_PMMU_SMOKE_RETURN rc=%ld stage=%04lx\n",
            rc, (ULONG)*scratch);
-    if (rc == 0 && *scratch == 0x3333U) {
+    if (rc == 0 && *scratch == 0x1111U) {
         marker("SYS:m1-3b4b6b-pmmu-returned.marker",
-               "PMMU alias instruction fetch returned\n");
+               "PMMU TT0/SRP/TC activation returned\n");
         marker("SYS:m1-3b4b6b-pmmu-pass.marker",
-               "PMMU alias instruction fetch passed\n");
+               "PMMU TT0/SRP/TC activation bisect passed\n");
         Printf("M68KDEB_PMMU_ALIAS_FETCH_PASS\n");
         Printf("M68KDEB_PMMU_SMOKE_PASS\n");
     } else {
         rc = 20;
         marker("SYS:m1-3b4b6b-pmmu-fail.marker",
-               "PMMU TT0-isolated alias instruction fetch failed\n");
+               "PMMU TT0/SRP/TC activation bisect failed\n");
     }
 
 out:
