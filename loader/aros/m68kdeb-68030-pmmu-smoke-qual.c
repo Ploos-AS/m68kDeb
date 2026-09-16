@@ -1,4 +1,4 @@
-/* M1.3b.4b.6b-PMMU isolated FS-UAE/AROS copied-code qualification. */
+/* M1.3b.4b.6b-PMMU isolated FS-UAE/AROS supervisor qualification. */
 #include <dos/dos.h>
 #include <exec/memory.h>
 #include <exec/types.h>
@@ -34,6 +34,7 @@ int main(void)
     UBYTE *tramp_raw = NULL;
     ULONG tramp_page;
     UWORD *scratch;
+    APTR old_user_sp;
     LONG rc = 20;
 
     Printf("M68KDEB_PMMU_SMOKE_START\n");
@@ -60,21 +61,23 @@ int main(void)
     Printf("tramp=0x%08lx scratch=0x%08lx blob_len=%lu\n",
            tramp_page, (ULONG)scratch, (ULONG)m68kdeb_pmmu_smoke_blob_len);
     marker("SYS:m1-3b4b6b-pmmu-armed.marker",
-           "68030 copied-code stage-write control armed\n");
+           "68030 supervisor trampoline control armed\n");
 
+    old_user_sp = SuperState();
     rc = ((smoke_fn_t)tramp_page)(NULL, 0UL, scratch);
+    if (old_user_sp) UserState(old_user_sp);
 
     Printf("M68KDEB_PMMU_SMOKE_RETURN rc=%ld stage=%04lx\n",
            rc, (ULONG)*scratch);
     if (rc == 0 && *scratch == 0x1111U) {
         marker("SYS:m1-3b4b6b-pmmu-returned.marker",
-               "68030 copied-code stage-write control returned\n");
+               "68030 supervisor trampoline control returned\n");
         marker("SYS:m1-3b4b6b-pmmu-pass.marker",
-               "68030 copied-code stage-write control passed\n");
+               "68030 supervisor trampoline control passed\n");
         Printf("M68KDEB_PMMU_SMOKE_PASS\n");
     } else {
         marker("SYS:m1-3b4b6b-pmmu-fail.marker",
-               "68030 copied-code stage-write control failed\n");
+               "68030 supervisor trampoline control failed\n");
         rc = 20;
     }
 
