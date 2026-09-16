@@ -1,4 +1,4 @@
-/* M1.3b.4b.6b-PMMU isolated FS-UAE/AROS MC68030 trampoline qualification. */
+/* M1.3b.4b.6b-PMMU isolated FS-UAE/AROS copied-code qualification. */
 #include <dos/dos.h>
 #include <exec/memory.h>
 #include <exec/types.h>
@@ -12,7 +12,7 @@
 extern unsigned char m68kdeb_pmmu_smoke_blob[];
 extern unsigned int m68kdeb_pmmu_smoke_blob_len;
 
-typedef LONG (*smoke_fn_t)(ULONG *unused_srp, ULONG unused_alias, UWORD *scratch);
+typedef LONG (*smoke_fn_t)(ULONG *unused_srp, ULONG unused_alias, UWORD *unused_scratch);
 
 static ULONG align_page(ULONG p)
 {
@@ -33,13 +33,11 @@ int main(void)
 {
     UBYTE *tramp_raw = NULL;
     ULONG tramp_page;
-    UWORD *scratch;
     LONG rc = 20;
 
     Printf("M68KDEB_PMMU_SMOKE_START\n");
 
-    if (!m68kdeb_pmmu_smoke_blob_len ||
-        m68kdeb_pmmu_smoke_blob_len > PAGE_SIZE - sizeof(UWORD)) {
+    if (!m68kdeb_pmmu_smoke_blob_len || m68kdeb_pmmu_smoke_blob_len > PAGE_SIZE) {
         Printf("FAIL blob_len=%lu\n", (ULONG)m68kdeb_pmmu_smoke_blob_len);
         return 20;
     }
@@ -51,38 +49,27 @@ int main(void)
     }
 
     tramp_page = align_page((ULONG)tramp_raw);
-    scratch = (UWORD *)(tramp_page + PAGE_SIZE - sizeof(UWORD));
-
     CopyMem(m68kdeb_pmmu_smoke_blob, (APTR)tramp_page,
             (ULONG)m68kdeb_pmmu_smoke_blob_len);
-    *scratch = 0xffffU;
     CacheClearU();
 
     Printf("tramp=0x%08lx blob_len=%lu\n",
            tramp_page, (ULONG)m68kdeb_pmmu_smoke_blob_len);
     marker("SYS:m1-3b4b6b-pmmu-armed.marker",
-           "68030 direct trampoline ABI control armed\n");
+           "68030 bare RTS copied-code control armed\n");
 
-    /*
-     * Deliberately stay in the caller's normal execution mode here.  The
-     * current trampoline only executes ordinary instructions plus MOVEC CACR;
-     * this bisect establishes whether the copied-code ABI/stack/RTS path is
-     * sound independently of SuperState()/UserState() and Disable()/Enable().
-     */
-    rc = ((smoke_fn_t)tramp_page)(NULL, 0UL, scratch);
+    rc = ((smoke_fn_t)tramp_page)(NULL, 0UL, NULL);
 
-    Printf("M68KDEB_PMMU_SMOKE_RETURN rc=%ld stage=%04lx\n",
-           rc, (ULONG)*scratch);
-    if (rc == 0 && *scratch == 0x1111U) {
+    Printf("M68KDEB_PMMU_SMOKE_RETURN rc=%ld\n", rc);
+    if (rc == 0) {
         marker("SYS:m1-3b4b6b-pmmu-returned.marker",
-               "68030 direct trampoline ABI control returned\n");
+               "68030 bare RTS copied-code control returned\n");
         marker("SYS:m1-3b4b6b-pmmu-pass.marker",
-               "68030 direct trampoline ABI control passed\n");
+               "68030 bare RTS copied-code control passed\n");
         Printf("M68KDEB_PMMU_SMOKE_PASS\n");
-        rc = 0;
     } else {
         marker("SYS:m1-3b4b6b-pmmu-fail.marker",
-               "68030 direct trampoline ABI control failed\n");
+               "68030 bare RTS copied-code control failed\n");
         rc = 20;
     }
 
