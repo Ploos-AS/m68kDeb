@@ -12,7 +12,7 @@
 extern unsigned char m68kdeb_pmmu_smoke_blob[];
 extern unsigned int m68kdeb_pmmu_smoke_blob_len;
 
-typedef LONG (*smoke_fn_t)(ULONG *unused_srp, ULONG unused_alias, UWORD *unused_scratch);
+typedef LONG (*smoke_fn_t)(ULONG *unused_srp, ULONG unused_alias, UWORD *stage);
 
 static ULONG align_page(ULONG p)
 {
@@ -33,11 +33,13 @@ int main(void)
 {
     UBYTE *tramp_raw = NULL;
     ULONG tramp_page;
+    UWORD *scratch;
     LONG rc = 20;
 
     Printf("M68KDEB_PMMU_SMOKE_START\n");
 
-    if (!m68kdeb_pmmu_smoke_blob_len || m68kdeb_pmmu_smoke_blob_len > PAGE_SIZE) {
+    if (!m68kdeb_pmmu_smoke_blob_len ||
+        m68kdeb_pmmu_smoke_blob_len > PAGE_SIZE - sizeof(UWORD)) {
         Printf("FAIL blob_len=%lu\n", (ULONG)m68kdeb_pmmu_smoke_blob_len);
         return 20;
     }
@@ -49,27 +51,30 @@ int main(void)
     }
 
     tramp_page = align_page((ULONG)tramp_raw);
+    scratch = (UWORD *)(tramp_page + PAGE_SIZE - sizeof(UWORD));
     CopyMem(m68kdeb_pmmu_smoke_blob, (APTR)tramp_page,
             (ULONG)m68kdeb_pmmu_smoke_blob_len);
+    *scratch = 0xffffU;
     CacheClearU();
 
-    Printf("tramp=0x%08lx blob_len=%lu\n",
-           tramp_page, (ULONG)m68kdeb_pmmu_smoke_blob_len);
+    Printf("tramp=0x%08lx scratch=0x%08lx blob_len=%lu\n",
+           tramp_page, (ULONG)scratch, (ULONG)m68kdeb_pmmu_smoke_blob_len);
     marker("SYS:m1-3b4b6b-pmmu-armed.marker",
-           "68030 bare RTS copied-code control armed\n");
+           "68030 copied-code stage-write control armed\n");
 
-    rc = ((smoke_fn_t)tramp_page)(NULL, 0UL, NULL);
+    rc = ((smoke_fn_t)tramp_page)(NULL, 0UL, scratch);
 
-    Printf("M68KDEB_PMMU_SMOKE_RETURN rc=%ld\n", rc);
-    if (rc == 0) {
+    Printf("M68KDEB_PMMU_SMOKE_RETURN rc=%ld stage=%04lx\n",
+           rc, (ULONG)*scratch);
+    if (rc == 0 && *scratch == 0x1111U) {
         marker("SYS:m1-3b4b6b-pmmu-returned.marker",
-               "68030 bare RTS copied-code control returned\n");
+               "68030 copied-code stage-write control returned\n");
         marker("SYS:m1-3b4b6b-pmmu-pass.marker",
-               "68030 bare RTS copied-code control passed\n");
+               "68030 copied-code stage-write control passed\n");
         Printf("M68KDEB_PMMU_SMOKE_PASS\n");
     } else {
         marker("SYS:m1-3b4b6b-pmmu-fail.marker",
-               "68030 bare RTS copied-code control failed\n");
+               "68030 copied-code stage-write control failed\n");
         rc = 20;
     }
 
