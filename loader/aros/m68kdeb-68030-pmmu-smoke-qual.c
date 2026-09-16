@@ -73,7 +73,7 @@ int main(void)
     scratch = (UWORD *)(tramp_page + PAGE_SIZE - sizeof(UWORD));
 
     if ((table_page | tramp_page) & 0x80000000UL) {
-        Printf("FAIL qualification memory outside TT0 lower-half window\n");
+        Printf("FAIL qualification memory outside lower-half window\n");
         goto out;
     }
 
@@ -105,7 +105,6 @@ int main(void)
            table_page, tramp_page, logical_alias);
     Printf("alias_path ri=%lu pi=%lu ti=%lu root=%08lx ptr=%08lx pte=%08lx\n",
            lri, lpi, lti, alias_root_desc, alias_ptr_desc, alias_pte_desc);
-    Printf("tt0_lower_2g_identity=1 target=%08lx\n", tramp_page);
 
     if ((alias_root_desc & TABLE_ADDR_MASK) != ((ULONG)alias_ptr & TABLE_ADDR_MASK) ||
         (alias_root_desc & 3UL) != 2UL ||
@@ -122,7 +121,7 @@ int main(void)
     marker("SYS:m1-3b4b6b-pmmu-alias-path-pass.marker",
            "High-half alias descriptor path preflight passed\n");
     marker("SYS:m1-3b4b6b-pmmu-armed.marker",
-           "PMMU TT0/SRP/TC activation bisect armed\n");
+           "68030 supervisor trampoline control armed\n");
 
     Disable();
     old_super = SuperState();
@@ -134,15 +133,14 @@ int main(void)
            rc, (ULONG)*scratch);
     if (rc == 0 && *scratch == 0x1111U) {
         marker("SYS:m1-3b4b6b-pmmu-returned.marker",
-               "PMMU TT0/SRP/TC activation returned\n");
+               "68030 supervisor trampoline control returned\n");
         marker("SYS:m1-3b4b6b-pmmu-pass.marker",
-               "PMMU TT0/SRP/TC activation bisect passed\n");
-        Printf("M68KDEB_PMMU_ALIAS_FETCH_PASS\n");
+               "68030 supervisor trampoline control passed\n");
         Printf("M68KDEB_PMMU_SMOKE_PASS\n");
     } else {
         rc = 20;
         marker("SYS:m1-3b4b6b-pmmu-fail.marker",
-               "PMMU TT0/SRP/TC activation bisect failed\n");
+               "68030 supervisor trampoline control failed\n");
     }
 
 out:
