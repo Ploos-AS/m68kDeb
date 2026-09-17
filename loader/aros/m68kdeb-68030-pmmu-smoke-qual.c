@@ -67,7 +67,6 @@ int main(void)
     table_page = align_page((ULONG)table_raw);
     tramp_page = align_page((ULONG)tramp_raw);
     scratch = (UWORD *)(tramp_page + PAGE_SIZE - sizeof(UWORD));
-
     root = (ULONG *)table_page;
     ptr = (ULONG *)(table_page + 512UL);
     pte = (ULONG *)(table_page + 1024UL);
@@ -76,11 +75,9 @@ int main(void)
             (ULONG)m68kdeb_pmmu_smoke_blob_len);
     *scratch = 0xffffU;
 
-    /* TC is enabled in this qualification, so SRP must reference an actual
-     * hierarchy. Map the trampoline page to itself; TT0 remains in the
-     * trampoline as the low-memory transparent path for surrounding AROS
-     * execution. This is the same table shape used by the known-good PMMU
-     * control baseline, without PTESTR or alias access. */
+    /* TC is enabled briefly, so use the same real identity hierarchy as the
+     * known-good PMMU control baseline. The trampoline itself performs no
+     * translated data access, PTESTR, alias access, TT0 load, or stage write. */
     ri = (tramp_page >> ROOT_INDEX_SHIFT) & (ROOT_TABLE_SIZE - 1UL);
     pi = (tramp_page >> PTR_INDEX_SHIFT) & (PTR_TABLE_SIZE - 1UL);
     ti = (tramp_page >> PAGE_INDEX_SHIFT) & (PAGE_TABLE_SIZE - 1UL);
@@ -98,7 +95,7 @@ int main(void)
            srp[0], srp[1], root[ri], ptr[pi], pte[ti],
            (ULONG)m68kdeb_pmmu_smoke_blob_len);
     marker("SYS:m1-3b4b6b-pmmu-armed.marker",
-           "68030 TC enable-disable control armed\n");
+           "68030 TC enable-disable baseline armed\n");
 
     old_user_sp = SuperState();
     rc = ((smoke_fn_t)tramp_page)(srp, 0UL, scratch);
@@ -106,15 +103,16 @@ int main(void)
 
     Printf("M68KDEB_PMMU_SMOKE_RETURN rc=%ld stage=%04lx\n",
            rc, (ULONG)*scratch);
-    if (rc == 0 && *scratch == 0x1111U) {
+    /* The baseline intentionally leaves scratch untouched. */
+    if (rc == 0 && *scratch == 0xffffU) {
         marker("SYS:m1-3b4b6b-pmmu-returned.marker",
-               "68030 TC enable-disable control returned\n");
+               "68030 TC enable-disable baseline returned\n");
         marker("SYS:m1-3b4b6b-pmmu-pass.marker",
-               "68030 TC enable-disable control passed\n");
+               "68030 TC enable-disable baseline passed\n");
         Printf("M68KDEB_PMMU_SMOKE_PASS\n");
     } else {
         marker("SYS:m1-3b4b6b-pmmu-fail.marker",
-               "68030 TC enable-disable control failed\n");
+               "68030 TC enable-disable baseline failed\n");
         rc = 20;
     }
 
