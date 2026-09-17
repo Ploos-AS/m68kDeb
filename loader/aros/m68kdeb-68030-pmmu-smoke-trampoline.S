@@ -3,11 +3,11 @@
  *
  * int entry(const ULONG srp[2], ULONG alias_page, UWORD *stage);
  *
- * Supervisor transition, CACR 0x0808, valid SRP load, PFLUSHA, and TT0 load
- * already pass under FS-UAE. Enable the known 68030 TC value and immediately
- * disable translation again before touching stage memory or returning. This
- * isolates TC activation from continued execution/return with translation on.
- * No PTESTR or alias access is performed.
+ * Use the real identity-mapped SRP hierarchy prepared by the qualifier and
+ * reproduce the previously known-good TC control as closely as possible:
+ * SRP -> PFLUSHA -> TC enable -> immediate TC disable -> PFLUSHA -> return.
+ * Do not load TT0, touch stage memory, perform PTESTR, or access an alias while
+ * translation is active. This isolates TC activation from the TT0 path.
  */
 
 	.text
@@ -17,26 +17,15 @@
 
 m68kdeb_68030_pmmu_smoke_entry:
 	.chip	68030
-	movel	4(%sp),%a1		/* srp */
-	movel	12(%sp),%a0		/* stage */
-	lea	%pc@(m68kdeb_68030_pmmu_smoke_tt0),%a2
-	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a3
-	movel	#0x00000808,%d0
-	movec	%d0,%cacr
-	pmove	%a1@,%srp
+	movel	4(%sp),%a0		/* srp */
+	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
+	pmove	%a0@,%srp
 	pflusha
-	pmove	%a2@,%tt0
-	pmove	%a3@,%tc
-	pmove	%a3@(4),%tc
+	pmove	%a1@,%tc
+	pmove	%a1@(4),%tc
 	pflusha
-	movew	#0x1111,%a0@
 	moveq	#0,%d0
 	rts
-
-	.balign 4
-m68kdeb_68030_pmmu_smoke_tt0:
-	/* Existing low-2-GiB transparent-translation descriptor. */
-	.long	0x007f8107
 
 	.balign 4
 m68kdeb_68030_pmmu_smoke_tc:
