@@ -12,7 +12,10 @@ INDEX="$OUT/nightly.html"
 curl -fL --retry 3 --retry-delay 2 "$INDEX_URL" -o "$INDEX"
 
 # Resolve the official amiga-m68k boot ISO link from the AROS nightly index.
-# Keep discovery dynamic here; qualification records the resolved URL and hash.
+# The index labels the target in table text while the href itself is only a
+# generic SourceForge Download URL, so do not require the target name to occur
+# inside href. Prefer the first Download link after the amiga-m68k-boot-iso
+# label; retain the old href-name match as a compatibility fallback.
 URL=$(python3 - "$INDEX" "$INDEX_URL" <<'PY'
 import re, sys
 from html import unescape
@@ -20,15 +23,28 @@ from urllib.parse import urljoin
 
 path, base = sys.argv[1:]
 text = open(path, encoding='utf-8', errors='replace').read()
-links = re.findall(r'href=["\']([^"\']+)["\']', text, re.I)
-links = [unescape(x) for x in links]
+
+# Current AROS index: target label is outside the anchor. Limit the search to
+# the following table fragment so we select this target's Download link rather
+# than another nightly artifact.
+m = re.search(r'amiga-m68k-boot-iso(?P<tail>.{0,12000})', text, re.I | re.S)
+if m:
+    hrefs = re.findall(r'href=["\']([^"\']+)["\']', m.group('tail'), re.I)
+    for href in hrefs:
+        href = unescape(href)
+        if 'sourceforge.net' in href.lower() or '/projects/aros/' in href.lower():
+            print(urljoin(base, href))
+            raise SystemExit(0)
+
+# Compatibility with older index layouts that included the artifact name in
+# the URL itself.
+links = [unescape(x) for x in re.findall(r'href=["\']([^"\']+)["\']', text, re.I)]
 for href in links:
-    low = href.lower()
-    if 'amiga-m68k-boot-iso' in low:
+    if 'amiga-m68k-boot-iso' in href.lower():
         print(urljoin(base, href))
-        break
-else:
-    raise SystemExit('could not resolve amiga-m68k-boot-iso link from AROS nightly index')
+        raise SystemExit(0)
+
+raise SystemExit('could not resolve amiga-m68k-boot-iso link from AROS nightly index')
 PY
 )
 
