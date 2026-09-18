@@ -3,10 +3,10 @@
  *
  * int entry(const ULONG srp[2], ULONG alias_page, UWORD *stage);
  *
- * The pure TC enable/disable baseline passes, while adding TT0 hangs. Leave
- * TT0 out and test one translated data access while TC is active. The stage
- * word lives at the end of the same identity-mapped page as this trampoline,
- * so both instruction fetch and the stage write use the known hierarchy.
+ * The real identity-mapped SRP hierarchy and pure TC enable/disable control
+ * pass, while adding TT0 makes the runtime hang. Keep TT0 absent and add one
+ * ordinary data access while translation is active. This isolates whether the
+ * identity mapping itself survives a translated write.
  */
 
 	.text
@@ -22,7 +22,7 @@ m68kdeb_68030_pmmu_smoke_entry:
 	pmove	%a1@,%srp
 	pflusha
 	pmove	%a2@,%tc
-	movew	#0x1111,%a0@		/* translated identity-mapped write */
+	movew	#0x1111,%a0@
 	pmove	%a2@(4),%tc
 	pflusha
 	moveq	#0,%d0
