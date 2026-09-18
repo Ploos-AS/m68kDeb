@@ -1,5 +1,5 @@
 /*
- * M1.3b.4b.6b-PMMU: same-page supervisor-data read control.
+ * M1.3b.4b.6b-PMMU: same-page data read with SRE cleared.
  *
  * int entry(const ULONG srp[2], ULONG alias_page, UWORD *stage);
  *
@@ -33,7 +33,7 @@ m68kdeb_68030_pmmu_smoke_entry:
 
 	.balign 4
 m68kdeb_68030_pmmu_smoke_tc:
-	.long	0x82c07760
+	/* E=1, SRE=0, PS=12, TIA=7, TIB=7, TIC=6. */\n	.long	0x80c07760
 	.long	0x00000000
 	.long	0x13579bdf
 
