@@ -1,4 +1,4 @@
-/* M1.3b.4b.6b-PMMU isolated FS-UAE/AROS translated stage-write qualification. */
+/* M1.3b.4b.6b-PMMU isolated FS-UAE/AROS translated data-read qualification. */
 #include <dos/dos.h>
 #include <exec/memory.h>
 #include <exec/types.h>
@@ -95,7 +95,7 @@ int main(void)
            srp[0], srp[1], root[ri], ptr[pi], pte[ti],
            (ULONG)m68kdeb_pmmu_smoke_blob_len);
     marker("SYS:m1-3b4b6b-pmmu-armed.marker",
-           "68030 translated stage-write control armed\n");
+           "68030 translated data-read control armed\n");
 
     /* Match the historical known-good PMMU qualifier envelope exactly: keep
      * task switching/interrupt delivery out of the active-translation window. */
@@ -110,13 +110,13 @@ int main(void)
     /* The stage word is identity-mapped and must be written while TC is active. */
     if (rc == 0 && *scratch == 0x1111U) {
         marker("SYS:m1-3b4b6b-pmmu-returned.marker",
-               "68030 translated stage-write control returned\n");
+               "68030 translated data-read control returned\n");
         marker("SYS:m1-3b4b6b-pmmu-pass.marker",
-               "68030 translated stage-write control passed\n");
+               "68030 translated data-read control passed\n");
         Printf("M68KDEB_PMMU_SMOKE_PASS\n");
     } else {
         marker("SYS:m1-3b4b6b-pmmu-fail.marker",
-               "68030 translated stage-write control failed\n");
+               "68030 translated data-read control failed\n");
         rc = 20;
     }
 
