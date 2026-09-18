@@ -95,7 +95,7 @@ int main(void)
            srp[0], srp[1], root[ri], ptr[pi], pte[ti],
            (ULONG)m68kdeb_pmmu_smoke_blob_len);
     marker("SYS:m1-3b4b6b-pmmu-armed.marker",
-           "68030 TC enable-disable baseline armed\n");
+           "68030 translated stage-write control armed\n");
 
     old_user_sp = SuperState();
     rc = ((smoke_fn_t)tramp_page)(srp, 0UL, scratch);
@@ -103,16 +103,16 @@ int main(void)
 
     Printf("M68KDEB_PMMU_SMOKE_RETURN rc=%ld stage=%04lx\n",
            rc, (ULONG)*scratch);
-    /* The baseline intentionally leaves scratch untouched. */
-    if (rc == 0 && *scratch == 0xffffU) {
+    /* The stage word is identity-mapped and must be written while TC is active. */
+    if (rc == 0 && *scratch == 0x1111U) {
         marker("SYS:m1-3b4b6b-pmmu-returned.marker",
-               "68030 TC enable-disable baseline returned\n");
+               "68030 translated stage-write control returned\n");
         marker("SYS:m1-3b4b6b-pmmu-pass.marker",
-               "68030 TC enable-disable baseline passed\n");
+               "68030 translated stage-write control passed\n");
         Printf("M68KDEB_PMMU_SMOKE_PASS\n");
     } else {
         marker("SYS:m1-3b4b6b-pmmu-fail.marker",
-               "68030 TC enable-disable baseline failed\n");
+               "68030 translated stage-write control failed\n");
         rc = 20;
     }
 
