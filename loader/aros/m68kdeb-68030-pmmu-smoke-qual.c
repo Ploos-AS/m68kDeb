@@ -1,4 +1,4 @@
-/* M1.3b.4b.6b-PMMU isolated FS-UAE/AROS TC enable-disable qualification. */
+/* M1.3b.4b.6b-PMMU isolated FS-UAE/AROS translated stage-write qualification. */
 #include <dos/dos.h>
 #include <exec/memory.h>
 #include <exec/types.h>
@@ -77,7 +77,7 @@ int main(void)
 
     /* TC is enabled briefly, so use the same real identity hierarchy as the
      * known-good PMMU control baseline. The trampoline itself performs no
-     * translated data access, PTESTR, alias access, TT0 load, or stage write. */
+     * PTESTR, alias access, or TT0 load. The trampoline performs one translated\n     * write through the identity mapping while TC is active. */
     ri = (tramp_page >> ROOT_INDEX_SHIFT) & (ROOT_TABLE_SIZE - 1UL);
     pi = (tramp_page >> PTR_INDEX_SHIFT) & (PTR_TABLE_SIZE - 1UL);
     ti = (tramp_page >> PAGE_INDEX_SHIFT) & (PAGE_TABLE_SIZE - 1UL);
