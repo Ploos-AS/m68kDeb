@@ -97,9 +97,13 @@ int main(void)
     marker("SYS:m1-3b4b6b-pmmu-armed.marker",
            "68030 translated stage-write control armed\n");
 
+    /* Match the historical known-good PMMU qualifier envelope exactly: keep
+     * task switching/interrupt delivery out of the active-translation window. */
+    Disable();
     old_user_sp = SuperState();
     rc = ((smoke_fn_t)tramp_page)(srp, 0UL, scratch);
     if (old_user_sp) UserState(old_user_sp);
+    Enable();
 
     Printf("M68KDEB_PMMU_SMOKE_RETURN rc=%ld stage=%04lx\n",
            rc, (ULONG)*scratch);
