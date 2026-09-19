@@ -1,5 +1,5 @@
 /*
- * M1.3b.4b.6b-PMMU: same-page data read with FCL disabled.
+ * M1.3b.4b.6b-PMMU: alias data read with FCL disabled.
  *
  * int entry(const ULONG srp[2], ULONG alias_page, UWORD *stage);
  *
@@ -16,12 +16,12 @@
 
 m68kdeb_68030_pmmu_smoke_entry:
 	.chip	68030
-	movel	4(%sp),%a0		/* srp */
+	movel	4(%sp),%a0		/* srp */\n\tmovel	8(%sp),%a2		/* logical alias page */
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 	pmove	%a0@,%srp
 	pflusha
 	pmove	%a1@,%tc
-	movel	%a1@(8),%d1		/* supervisor-data read, same mapped page */
+	movel	%a1@(8),%d0		/* offset of embedded constant */\n\tsubl	%a1,%d0\n\taddl	%a2,%d0\n\tmovel	%d0,%a2\n\tmovel	%a2@,%d1		/* translated read through alias PTE */
 	pmove	%a1@(4),%tc
 	pflusha
 	moveq	#0,%d0
