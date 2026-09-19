@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/m1_3b4b6b-pmmu-fsuae-runtime.yml'
+      - '.github/workflows/m1_3b4b6b-pmmu-ci-trigger'
       - 'ci/fs-uae/m1_3b4b6b_aros_a1200_pmmu_smoke.fs-uae'
       - 'ci/fs-uae/prepare-m1_3b4b6b-pmmu-smoke.sh'
       - 'loader/aros/m68kdeb-68030-pmmu-smoke-trampoline.S'
