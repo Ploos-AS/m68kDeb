@@ -1,4 +1,4 @@
-/* M1.3b.4b.6b-PMMU isolated FS-UAE/AROS same-page data-read FCL-off qualification. */
+/* M1.3b.4b.6b-PMMU isolated FS-UAE/AROS alias data-read FCL-off qualification. */
 #include <dos/dos.h>
 #include <exec/memory.h>
 #include <exec/types.h>
@@ -21,7 +21,7 @@
 extern unsigned char m68kdeb_pmmu_smoke_blob[];
 extern unsigned int m68kdeb_pmmu_smoke_blob_len;
 
-typedef LONG (*smoke_fn_t)(ULONG *srp, ULONG unused_alias, UWORD *stage);
+typedef LONG (*smoke_fn_t)(ULONG *srp, ULONG alias_page, UWORD *stage);
 
 static ULONG align_page(ULONG p)
 {
@@ -44,7 +44,7 @@ int main(void)
     ULONG table_page, tramp_page;
     ULONG *root, *ptr, *pte;
     ULONG srp[2];
-    ULONG ri, pi, ti;
+    ULONG ri, pi, ti, alias_page, ari, api, ati;
     UWORD *scratch;
     APTR old_user_sp;
     LONG rc = 20;
@@ -73,7 +73,7 @@ int main(void)
 
     CopyMem(m68kdeb_pmmu_smoke_blob, (APTR)tramp_page,
             (ULONG)m68kdeb_pmmu_smoke_blob_len);
-    *scratch = 0xffffU;
+    *scratch = 0xffffU;\n    alias_page = tramp_page ^ PAGE_SIZE;
 
     /* TC is enabled briefly, so use the same real identity hierarchy as the
      * known-good PMMU control baseline. The trampoline itself performs no
@@ -83,7 +83,7 @@ int main(void)
     ti = (tramp_page >> PAGE_INDEX_SHIFT) & (PAGE_TABLE_SIZE - 1UL);
     root[ri] = ((ULONG)ptr & 0xffffff00UL) | TABLE_DESC;
     ptr[pi] = ((ULONG)pte & 0xffffff00UL) | TABLE_DESC;
-    pte[ti] = (tramp_page & 0xfffff000UL) | PAGE_DESC;
+    pte[ti] = (tramp_page & 0xfffff000UL) | PAGE_DESC;\n\n    /* Map a neighbouring logical page to the trampoline's physical page. */\n    ari = (alias_page >> ROOT_INDEX_SHIFT) & (ROOT_TABLE_SIZE - 1UL);\n    api = (alias_page >> PTR_INDEX_SHIFT) & (PTR_TABLE_SIZE - 1UL);\n    ati = (alias_page >> PAGE_INDEX_SHIFT) & (PAGE_TABLE_SIZE - 1UL);\n    if (ari != ri || api != pi || ati == ti) {\n        Printf(\"FAIL alias geometry alias=0x%08lx\\n\", alias_page);\n        goto out;\n    }\n    pte[ati] = (tramp_page & 0xfffff000UL) | PAGE_DESC;
 
     srp[0] = 0x80000002UL;
     srp[1] = (ULONG)root;
@@ -95,13 +95,13 @@ int main(void)
            srp[0], srp[1], root[ri], ptr[pi], pte[ti],
            (ULONG)m68kdeb_pmmu_smoke_blob_len);
     marker("SYS:m1-3b4b6b-pmmu-armed.marker",
-           "68030 same-page data-read FCL-off control armed\n");
+           "68030 alias data-read FCL-off control armed\n");
 
     /* Match the historical known-good PMMU qualifier envelope exactly: keep
      * task switching/interrupt delivery out of the active-translation window. */
     Disable();
     old_user_sp = SuperState();
-    rc = ((smoke_fn_t)tramp_page)(srp, 0UL, scratch);
+    rc = ((smoke_fn_t)tramp_page)(srp, alias_page, scratch);
     if (old_user_sp) UserState(old_user_sp);
     Enable();
 
