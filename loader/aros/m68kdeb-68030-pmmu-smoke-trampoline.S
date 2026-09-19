@@ -3,8 +3,9 @@
  *
  * int entry(const ULONG srp[2], ULONG alias_page, UWORD *stage);
  *
- * Map a neighbouring logical page to the trampoline's physical page, then
- * perform one supervisor-data read through that alias while TC is active.
+ * Control: keep the neighbouring alias PTE installed, but perform the
+ * supervisor-data read through the trampoline identity mapping. This isolates
+ * alias-table presence from actually selecting the alias translation.
  */
 
 	.text
@@ -15,17 +16,12 @@
 m68kdeb_68030_pmmu_smoke_entry:
 	.chip	68030
 	movel	4(%sp),%a0		/* srp */
-	movel	8(%sp),%a2		/* logical alias page */
+	movel	8(%sp),%a2		/* alias page, intentionally not dereferenced */
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 	pmove	%a0@,%srp
 	pflusha
 	pmove	%a1@,%tc
-	movel	%a1,%d0
-	andil	#0x00000fff,%d0	/* TC label offset within trampoline page */
-	addql	#8,%d0		/* embedded constant follows the two TC longs */
-	addl	%a2,%d0
-	movel	%d0,%a2
-	movel	%a2@,%d1		/* translated read through alias PTE */
+	movel	%a1@(8),%d1		/* translated read through identity PTE */
 	pmove	%a1@(4),%tc
 	pflusha
 	moveq	#0,%d0
