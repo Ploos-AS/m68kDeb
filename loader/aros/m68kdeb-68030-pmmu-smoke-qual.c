@@ -77,7 +77,7 @@ int main(void)
 
     /* TC is enabled briefly, so use the same real identity hierarchy as the
      * known-good PMMU control baseline. The trampoline itself performs no
-     * PTESTR, alias access, or TT0 load. The trampoline performs one translated\n     * write through the identity mapping while TC is active. */
+     * PTESTR, alias access, or TT0 load. The trampoline performs one same-page data read through the identity mapping\n     * while TC is active; the scratch sentinel remains untouched. */
     ri = (tramp_page >> ROOT_INDEX_SHIFT) & (ROOT_TABLE_SIZE - 1UL);
     pi = (tramp_page >> PTR_INDEX_SHIFT) & (PTR_TABLE_SIZE - 1UL);
     ti = (tramp_page >> PAGE_INDEX_SHIFT) & (PAGE_TABLE_SIZE - 1UL);
@@ -107,8 +107,8 @@ int main(void)
 
     Printf("M68KDEB_PMMU_SMOKE_RETURN rc=%ld stage=%04lx\n",
            rc, (ULONG)*scratch);
-    /* The stage word is identity-mapped and must be written while TC is active. */
-    if (rc == 0 && *scratch == 0x1111U) {
+    /* The same-page constant is checked by the trampoline; scratch stays untouched. */
+    if (rc == 0 && *scratch == 0xffffU) {
         marker("SYS:m1-3b4b6b-pmmu-returned.marker",
                "68030 same-page data-read FCL control returned\n");
         marker("SYS:m1-3b4b6b-pmmu-pass.marker",
