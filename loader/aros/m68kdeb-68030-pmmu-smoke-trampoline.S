@@ -3,10 +3,8 @@
  *
  * int entry(const ULONG srp[2], ULONG alias_page, UWORD *stage);
  *
- * Instruction fetch survives active TC, while reading the stage pointer hangs.
- * Read a constant embedded in the trampoline page instead. This keeps the
- * logical/physical page identical to the executing code and isolates
- * supervisor-data FC/page-walk behaviour from the external stage address.
+ * Map a neighbouring logical page to the trampoline's physical page, then
+ * perform one supervisor-data read through that alias while TC is active.
  */
 
 	.text
@@ -16,12 +14,18 @@
 
 m68kdeb_68030_pmmu_smoke_entry:
 	.chip	68030
-	movel	4(%sp),%a0		/* srp */\n\tmovel	8(%sp),%a2		/* logical alias page */
+	movel	4(%sp),%a0		/* srp */
+	movel	8(%sp),%a2		/* logical alias page */
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 	pmove	%a0@,%srp
 	pflusha
 	pmove	%a1@,%tc
-	movel	%a1@(8),%d0		/* offset of embedded constant */\n\tsubl	%a1,%d0\n\taddl	%a2,%d0\n\tmovel	%d0,%a2\n\tmovel	%a2@,%d1		/* translated read through alias PTE */
+	movel	%a1,%d0
+	andil	#0x00000fff,%d0	/* TC label offset within trampoline page */
+	addql	#8,%d0		/* embedded constant follows the two TC longs */
+	addl	%a2,%d0
+	movel	%d0,%a2
+	movel	%a2@,%d1		/* translated read through alias PTE */
 	pmove	%a1@(4),%tc
 	pflusha
 	moveq	#0,%d0
