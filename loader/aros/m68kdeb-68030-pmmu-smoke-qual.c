@@ -92,15 +92,13 @@ int main(void)
         Printf("FAIL alias geometry alias=0x%08lx\n", alias_page);
         goto out;
     }
-    pte[ati] = (tramp_page & 0xfffff000UL) | PAGE_DESC;
-
-    srp[0] = 0x80000002UL;
+    /* Control: keep the alias slot invalid. If this restores the known-good\n     * identity-read result, merely installing the duplicate mapping is causal. */\n    pte[ati] = 0;\n\n    srp[0] = 0x80000002UL;
     srp[1] = (ULONG)root;
     CacheClearU();
 
     Printf("table=0x%08lx tramp=0x%08lx alias=0x%08lx scratch=0x%08lx ri=%lu pi=%lu ti=%lu ati=%lu\n",
            table_page, tramp_page, alias_page, (ULONG)scratch, ri, pi, ti, ati);
-    Printf("srp=%08lx:%08lx root=%08lx ptr=%08lx pte=%08lx alias_pte=%08lx blob_len=%lu\n",
+    Printf("srp=%08lx:%08lx root=%08lx ptr=%08lx pte=%08lx alias_pte(control-invalid)=%08lx blob_len=%lu\n",
            srp[0], srp[1], root[ri], ptr[pi], pte[ti], pte[ati],
            (ULONG)m68kdeb_pmmu_smoke_blob_len);
     marker("SYS:m1-3b4b6b-pmmu-armed.marker",
