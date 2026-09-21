@@ -92,7 +92,11 @@ int main(void)
         Printf("FAIL alias geometry alias=0x%08lx\n", alias_page);
         goto out;
     }
-    /* Control: keep the alias slot invalid. If this restores the known-good\n     * identity-read result, merely installing the duplicate mapping is causal. */\n    pte[ati] = 0;\n\n    srp[0] = 0x80000002UL;
+    /* Control: keep the alias slot invalid. If this restores the known-good
+     * identity-read result, merely installing the duplicate mapping is causal. */
+    pte[ati] = 0;
+
+    srp[0] = 0x80000002UL;
     srp[1] = (ULONG)root;
     CacheClearU();
 
