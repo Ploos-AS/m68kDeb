@@ -11,6 +11,7 @@ rm -rf "$OUT/aros-root" "$OUT/rom" "$OUT/logs" "$OUT/screenshots" "$OUT/aros-fet
 mkdir -p "$OUT/aros-root" "$OUT/rom" "$OUT/logs" "$OUT/screenshots"
 
 FETCH_OUT="$OUT/aros-fetch"
+AROS_PINNED_URL="https://sourceforge.net/projects/aros/files/nightly2/20260919/Binaries/AROS-20260919-amiga-m68k-boot-iso.zip/download" \
 OUT="$FETCH_OUT" sh ci/fs-uae/fetch-aros-m68k-nightly.sh
 AROS_URL=$(cat "$FETCH_OUT/SOURCE_URL")
 AROS_SHA256=$(awk 'NR == 1 { print $1 }' "$FETCH_OUT/SHA256SUMS")
