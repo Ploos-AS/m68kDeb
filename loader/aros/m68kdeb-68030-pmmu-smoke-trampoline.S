@@ -3,9 +3,8 @@
  *
  * int entry(const ULONG srp[2], ULONG alias_page, UWORD *stage);
  *
- * Control: keep the neighbouring alias PTE installed, but perform the
- * supervisor-data read through the trampoline identity mapping. This isolates
- * alias-table presence from actually selecting the alias translation.
+ * Control: perform the known-good identity-mapped supervisor-data read while
+ * the qualifier still computes an unused neighbouring alias slot.
  */
 
 	.text
@@ -16,7 +15,6 @@
 m68kdeb_68030_pmmu_smoke_entry:
 	.chip	68030
 	movel	4(%sp),%a0		/* srp */
-	movel	8(%sp),%a2		/* alias page, intentionally not dereferenced */
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 	pmove	%a0@,%srp
 	pflusha
