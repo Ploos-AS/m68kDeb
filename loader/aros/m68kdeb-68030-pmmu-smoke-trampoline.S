@@ -1,10 +1,12 @@
 /*
- * M1.3b.4b.6b-PMMU: alias data read with FCL disabled.
+ * M1.3b.4b.6b-PMMU: same-page data read with FCL disabled.
  *
  * int entry(const ULONG srp[2], ULONG alias_page, UWORD *stage);
  *
- * Control: perform the known-good identity-mapped supervisor-data read while
- * the qualifier still computes an unused neighbouring alias slot.
+ * Instruction fetch survives active TC, while reading the stage pointer hangs.
+ * Read a constant embedded in the trampoline page instead. This keeps the
+ * logical/physical page identical to the executing code and isolates
+ * supervisor-data FC/page-walk behaviour from the external stage address.
  */
 
 	.text
@@ -19,7 +21,7 @@ m68kdeb_68030_pmmu_smoke_entry:
 	pmove	%a0@,%srp
 	pflusha
 	pmove	%a1@,%tc
-	movel	%a1@(8),%d1		/* translated read through identity PTE */
+	movel	%a1@(8),%d1		/* supervisor-data read, same mapped page */
 	pmove	%a1@(4),%tc
 	pflusha
 	moveq	#0,%d0
