@@ -6,10 +6,14 @@ OUT=${OUT:-out/aros-m68k}
 # currently presents a certificate that does not match the host name, so CI
 # deliberately avoids bypassing TLS verification.
 INDEX_URL=${AROS_INDEX_URL:-https://aros.sourceforge.io/cgi-bin/files?lang=en&type=nightly2}
+PINNED_URL=${AROS_PINNED_URL:-}
 mkdir -p "$OUT"
 
 INDEX="$OUT/nightly.html"
-curl -fL --retry 3 --retry-delay 2 "$INDEX_URL" -o "$INDEX"
+if [ -n "$PINNED_URL" ]; then
+  URL="$PINNED_URL"
+else
+  curl -fL --retry 3 --retry-delay 2 "$INDEX_URL" -o "$INDEX"
 
 # Resolve the official amiga-m68k boot ISO link from the AROS nightly index.
 # The index labels the target in table text while the href itself is only a
@@ -47,6 +51,7 @@ for href in links:
 raise SystemExit('could not resolve amiga-m68k-boot-iso link from AROS nightly index')
 PY
 )
+fi
 
 printf '%s\n' "$URL" > "$OUT/SOURCE_URL"
 
