@@ -59,15 +59,31 @@ ARCHIVE="$OUT/aros-amiga-m68k-boot-iso"
 # The nightly index can briefly advertise a dated SourceForge artifact before
 # that artifact is actually published. Fall back to the last known-good AROS
 # amiga-m68k boot ISO instead of turning emulator qualification into a 404.
-FALLBACK_URL=${AROS_FALLBACK_URL:-https://sourceforge.net/projects/aros/files/nightly2/20260919/Binaries/AROS-20260919-amiga-m68k-boot-iso.zip/download}
 if ! curl -fL --retry 3 --retry-delay 2 "$URL" -o "$ARCHIVE"; then
-  if [ "$URL" = "$FALLBACK_URL" ]; then
+  echo "AROS advertised nightly unavailable; resolving newest published amiga-m68k boot ISO" >&2
+  URL=$(python3 - "$INDEX" <<'PY'
+import re, sys
+from html import unescape
+
+text = open(sys.argv[1], encoding='utf-8', errors='replace').read()
+dates = sorted(set(re.findall(r'nightly2/(20[0-9]{6})/', text)), reverse=True)
+for date in dates:
+    print("https://sourceforge.net/projects/aros/files/nightly2/%s/Binaries/AROS-%s-amiga-m68k-boot-iso.zip/download" % (date, date))
+PY
+)
+  found=
+  for candidate in $URL; do
+    if curl -fL --retry 1 --retry-delay 1 "$candidate" -o "$ARCHIVE"; then
+      URL="$candidate"
+      found=1
+      break
+    fi
+  done
+  if [ -z "$found" ]; then
+    echo "no published AROS amiga-m68k nightly payload found" >&2
     exit 1
   fi
-  echo "AROS nightly unavailable; falling back to known-good payload" >&2
-  URL="$FALLBACK_URL"
   printf '%s\n' "$URL" > "$OUT/SOURCE_URL"
-  curl -fL --retry 3 --retry-delay 2 "$URL" -o "$ARCHIVE"
 fi
 sha256sum "$ARCHIVE" > "$OUT/SHA256SUMS"
 file "$ARCHIVE" | tee "$OUT/FILE.txt"
