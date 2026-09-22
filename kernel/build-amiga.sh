@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-# M1.3b.4b.6b runtime diagnostics for the 68030 Linux MMU handoff.
+# M1.3b.4b.6b.11 runtime diagnostics for the 68030 Linux MMU handoff.
 LINUX_VERSION=${LINUX_VERSION:-7.2.4}
 LINUX_SHA256=${LINUX_SHA256:-01710ee01737dac492f1bae52becd057e08d20d11589089aa06accff415c28dd}
 JOBS=${JOBS:-2}
@@ -32,28 +32,11 @@ fi
 printf '%s  %s\n' "$ACTUAL_SHA256" "$(basename "$TARBALL")" > "$OUT/linux-source.SHA256"
 tar -C "$WORK" -xf "$TARBALL"
 
-# Diagnostic A/B test: suppress the *68030* Amiga Zorro III TT1 mapping.
-# The previous experiment accidentally matched the 68040 _PAGE_NOCACHE_S
-# branch. The 68030 branch is _PAGE_NOCACHE030. This is diagnostic-only;
-# production must retain the upstream mapping unless evidence says otherwise.
-python3 - "$SRC/arch/m68k/kernel/head.S" <<'PY'
-from pathlib import Path
-import sys
-
-path = Path(sys.argv[1])
-text = path.read_text()
-anchor = "\tmmu_map_tt\t#1,#0x40000000,#0x20000000,#_PAGE_NOCACHE030\n"
-count = text.count(anchor)
-if count != 1:
-    raise SystemExit(f'FAIL: expected one 68030 Amiga Zorro III TT1 mapping, found {count}')
-text = text.replace(
-    anchor,
-    "\t/* m68kDeb 6b.10 diagnostic: 68030 Zorro III TT1 suppressed */\n",
-    1,
-)
-path.write_text(text)
-PY
-printf '%s\n' 'disabled: Amiga 68030 Zorro III TT1 0x40000000/0x20000000' > "$OUT/MMU_68030_TT1_AB_TEST.txt"
+# Keep the upstream Amiga 68030 Zorro III TT1 mapping enabled. 6b.10 proved
+# that suppressing TT1 still reaches the final pre-TC marker but faults at the
+# PMOVE TC transition before the post-enable long jump. The upstream mapping
+# is part of the Linux/m68k transition environment and must not be removed.
+printf '%s\n' 'enabled: upstream Amiga 68030 Zorro III TT1 0x40000000/0x20000000' > "$OUT/MMU_68030_TT1_AB_TEST.txt"
 
 # Instrument the 68030 MMU engage sequence. Everything below runs while the
 # MMU is still disabled until M. S dumps the 64-bit SRP image Linux intends to
