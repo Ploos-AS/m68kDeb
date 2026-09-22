@@ -2,3 +2,4 @@ M1.3b.4b.6b PMMU qualification trigger.
 Touch this file to rerun all PMMU runtime backends without changing test semantics.
 trigger_epoch=2026-09-21T21:35:00+02:00
 AROS fallback fix: c95812c
+AROS published-nightly resolver: 858c9e7
