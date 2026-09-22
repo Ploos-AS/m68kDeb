@@ -56,7 +56,19 @@ fi
 printf '%s\n' "$URL" > "$OUT/SOURCE_URL"
 
 ARCHIVE="$OUT/aros-amiga-m68k-boot-iso"
-curl -fL --retry 3 --retry-delay 2 "$URL" -o "$ARCHIVE"
+# The nightly index can briefly advertise a dated SourceForge artifact before
+# that artifact is actually published. Fall back to the last known-good AROS
+# amiga-m68k boot ISO instead of turning emulator qualification into a 404.
+FALLBACK_URL=${AROS_FALLBACK_URL:-https://sourceforge.net/projects/aros/files/nightly2/20260919/Binaries/AROS-20260919-amiga-m68k-boot-iso.zip/download}
+if ! curl -fL --retry 3 --retry-delay 2 "$URL" -o "$ARCHIVE"; then
+  if [ "$URL" = "$FALLBACK_URL" ]; then
+    exit 1
+  fi
+  echo "AROS nightly unavailable; falling back to known-good payload" >&2
+  URL="$FALLBACK_URL"
+  printf '%s\n' "$URL" > "$OUT/SOURCE_URL"
+  curl -fL --retry 3 --retry-delay 2 "$URL" -o "$ARCHIVE"
+fi
 sha256sum "$ARCHIVE" > "$OUT/SHA256SUMS"
 file "$ARCHIVE" | tee "$OUT/FILE.txt"
 
