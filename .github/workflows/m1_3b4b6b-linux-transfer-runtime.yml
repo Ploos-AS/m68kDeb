@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/m1_3b4b6b-linux-transfer-runtime.yml'
+      - '.github/workflows/m1_3b4b6b-linux-transfer-ci-trigger'
       - 'ci/fs-uae/m1_3b4b6b_aros_a1200_linux_transfer.fs-uae'
       - 'ci/fs-uae/prepare-m1_3b4b6b-linux-transfer.sh'
       - 'loader/aros/m68kdeb-loader.c'
