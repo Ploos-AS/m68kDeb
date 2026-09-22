@@ -3,3 +3,4 @@ Touch this file to rerun all PMMU runtime backends without changing test semanti
 trigger_epoch=2026-09-21T21:35:00+02:00
 AROS fallback fix: c95812c
 AROS published-nightly resolver: 858c9e7
+AROS pinned-index fallback: 01a11dd
