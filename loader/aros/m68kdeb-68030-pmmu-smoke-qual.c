@@ -1,4 +1,4 @@
-/* M1.3b.4b.6b-PMMU isolated FS-UAE/AROS Linux-style multi-page SRP/TC qualification. */
+/* M1.3b.4b.6b-PMMU isolated FS-UAE/AROS Linux-style populated page-table SRP/TC qualification. */
 #include <dos/dos.h>
 #include <exec/memory.h>
 #include <exec/types.h>
@@ -86,10 +86,16 @@ int main(void)
     root[ri] = ((ULONG)ptr & 0xffffff00UL) | TABLE_DESC;
     ptr[pi] = ((ULONG)pte & 0xffffff00UL) | TABLE_DESC;
     pte[ti] = (tramp_page & 0xfffff000UL) | PAGE_DESC;
-    /* 6b.13: map the immediately following logical page too, mirroring the
-     * Linux transition where instruction fetch continues through a populated
-     * hierarchy rather than a one-page synthetic island. */
-    pte[(ti + 1UL) & (PAGE_TABLE_SIZE - 1UL)] = alias_page | PAGE_DESC;
+    /* 6b.14: populate the complete 64-entry page table with an identity
+     * 256 KiB window. Linux's 68030 bootstrap enters TC with populated tables,
+     * not a synthetic one/two-page island. Keep the same descriptor geometry
+     * and exact TC while isolating this variable from the Linux boot itself. */
+    {
+        ULONG i;
+        ULONG window = tramp_page & ~((PAGE_TABLE_SIZE * PAGE_SIZE) - 1UL);
+        for (i = 0; i < PAGE_TABLE_SIZE; ++i)
+            pte[i] = (window + i * PAGE_SIZE) | PAGE_DESC;
+    }
 
     srp[0] = 0x80000002UL;
     srp[1] = (ULONG)root;
@@ -101,7 +107,7 @@ int main(void)
            srp[0], srp[1], root[ri], ptr[pi], pte[ti],
            (ULONG)m68kdeb_pmmu_smoke_blob_len);
     marker("SYS:m1-3b4b6b-pmmu-armed.marker",
-           "68030 same-page data-read FCL-off control armed\n");
+           "68030 Linux-style populated page-table control armed\n");
 
     /* Match the historical known-good PMMU qualifier envelope exactly: keep
      * task switching/interrupt delivery out of the active-translation window. */
@@ -116,13 +122,13 @@ int main(void)
     /* The same-page constant is checked by the trampoline; scratch stays untouched. */
     if (rc == 0 && *scratch == 0xffffU) {
         marker("SYS:m1-3b4b6b-pmmu-returned.marker",
-               "68030 same-page data-read FCL-off control returned\n");
+               "68030 Linux-style populated page-table control returned\n");
         marker("SYS:m1-3b4b6b-pmmu-pass.marker",
-               "68030 same-page data-read FCL-off control passed\n");
+               "68030 Linux-style populated page-table control passed\n");
         Printf("M68KDEB_PMMU_SMOKE_PASS\n");
     } else {
         marker("SYS:m1-3b4b6b-pmmu-fail.marker",
-               "68030 same-page data-read FCL-off control failed\n");
+               "68030 Linux-style populated page-table control failed\n");
         rc = 20;
     }
 
