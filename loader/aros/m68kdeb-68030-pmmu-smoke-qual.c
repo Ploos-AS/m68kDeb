@@ -49,23 +49,27 @@ int main(void)
     APTR old_user_sp;
     LONG rc = 20;
 
-    Printf("M68KDEB_PMMU_SMOKE_START\n");
+    Printf("M68KDEB_PMMU_SMOKE_START
+");
 
     if (!m68kdeb_pmmu_smoke_blob_len ||
         m68kdeb_pmmu_smoke_blob_len > PAGE_SIZE - sizeof(UWORD)) {
-        Printf("FAIL blob_len=%lu\n", (ULONG)m68kdeb_pmmu_smoke_blob_len);
+        Printf("FAIL blob_len=%lu
+", (ULONG)m68kdeb_pmmu_smoke_blob_len);
         return 20;
     }
 
     table_raw = (UBYTE *)AllocMem(TABLE_RAW_BYTES, MEMF_PUBLIC | MEMF_CLEAR);
     tramp_raw = (UBYTE *)AllocMem(TRAMP_RAW_BYTES, MEMF_PUBLIC | MEMF_CLEAR);
     if (!table_raw || !tramp_raw) {
-        Printf("FAIL alloc\n");
+        Printf("FAIL alloc
+");
         goto out;
     }
 
     table_page = align_page((ULONG)table_raw);
-    tramp_page = align_page((ULONG)tramp_raw);\n    alias_page = tramp_page + PAGE_SIZE;
+    tramp_page = align_page((ULONG)tramp_raw);
+    alias_page = tramp_page + PAGE_SIZE;
     scratch = (UWORD *)(tramp_page + PAGE_SIZE - sizeof(UWORD));
     root = (ULONG *)table_page;
     ptr = (ULONG *)(table_page + 512UL);
@@ -77,25 +81,33 @@ int main(void)
 
     /* TC is enabled briefly, so use the same real identity hierarchy as the
      * known-good PMMU control baseline. The trampoline itself performs no
-     * PTESTR, alias access, or TT0 load. The trampoline performs one same-page data read through the identity mapping\n     * while TC is active; the scratch sentinel remains untouched. */
+     * PTESTR, alias access, or TT0 load. The trampoline performs one same-page data read through the identity mapping
+     * while TC is active; the scratch sentinel remains untouched. */
     ri = (tramp_page >> ROOT_INDEX_SHIFT) & (ROOT_TABLE_SIZE - 1UL);
     pi = (tramp_page >> PTR_INDEX_SHIFT) & (PTR_TABLE_SIZE - 1UL);
     ti = (tramp_page >> PAGE_INDEX_SHIFT) & (PAGE_TABLE_SIZE - 1UL);
     root[ri] = ((ULONG)ptr & 0xffffff00UL) | TABLE_DESC;
     ptr[pi] = ((ULONG)pte & 0xffffff00UL) | TABLE_DESC;
-    pte[ti] = (tramp_page & 0xfffff000UL) | PAGE_DESC;\n    /* 6b.13: map the immediately following logical page too, mirroring the\n     * Linux transition where instruction fetch continues through a populated\n     * hierarchy rather than a one-page synthetic island. */\n    pte[(ti + 1UL) & (PAGE_TABLE_SIZE - 1UL)] = alias_page | PAGE_DESC;
+    pte[ti] = (tramp_page & 0xfffff000UL) | PAGE_DESC;
+    /* 6b.13: map the immediately following logical page too, mirroring the
+     * Linux transition where instruction fetch continues through a populated
+     * hierarchy rather than a one-page synthetic island. */
+    pte[(ti + 1UL) & (PAGE_TABLE_SIZE - 1UL)] = alias_page | PAGE_DESC;
 
     srp[0] = 0x80000002UL;
     srp[1] = (ULONG)root;
     CacheClearU();
 
-    Printf("table=0x%08lx tramp=0x%08lx scratch=0x%08lx ri=%lu pi=%lu ti=%lu\n",
+    Printf("table=0x%08lx tramp=0x%08lx scratch=0x%08lx ri=%lu pi=%lu ti=%lu
+",
            table_page, tramp_page, (ULONG)scratch, ri, pi, ti);
-    Printf("srp=%08lx:%08lx root=%08lx ptr=%08lx pte=%08lx blob_len=%lu\n",
+    Printf("srp=%08lx:%08lx root=%08lx ptr=%08lx pte=%08lx blob_len=%lu
+",
            srp[0], srp[1], root[ri], ptr[pi], pte[ti],
            (ULONG)m68kdeb_pmmu_smoke_blob_len);
     marker("SYS:m1-3b4b6b-pmmu-armed.marker",
-           "68030 same-page data-read FCL-off control armed\n");
+           "68030 same-page data-read FCL-off control armed
+");
 
     /* Match the historical known-good PMMU qualifier envelope exactly: keep
      * task switching/interrupt delivery out of the active-translation window. */
@@ -105,18 +117,23 @@ int main(void)
     if (old_user_sp) UserState(old_user_sp);
     Enable();
 
-    Printf("M68KDEB_PMMU_SMOKE_RETURN rc=%ld stage=%04lx\n",
+    Printf("M68KDEB_PMMU_SMOKE_RETURN rc=%ld stage=%04lx
+",
            rc, (ULONG)*scratch);
     /* The same-page constant is checked by the trampoline; scratch stays untouched. */
     if (rc == 0 && *scratch == 0xffffU) {
         marker("SYS:m1-3b4b6b-pmmu-returned.marker",
-               "68030 same-page data-read FCL-off control returned\n");
+               "68030 same-page data-read FCL-off control returned
+");
         marker("SYS:m1-3b4b6b-pmmu-pass.marker",
-               "68030 same-page data-read FCL-off control passed\n");
-        Printf("M68KDEB_PMMU_SMOKE_PASS\n");
+               "68030 same-page data-read FCL-off control passed
+");
+        Printf("M68KDEB_PMMU_SMOKE_PASS
+");
     } else {
         marker("SYS:m1-3b4b6b-pmmu-fail.marker",
-               "68030 same-page data-read FCL-off control failed\n");
+               "68030 same-page data-read FCL-off control failed
+");
         rc = 20;
     }
 
