@@ -49,21 +49,18 @@ int main(void)
     APTR old_user_sp;
     LONG rc = 20;
 
-    Printf("M68KDEB_PMMU_SMOKE_START
-");
+    Printf("M68KDEB_PMMU_SMOKE_START\n");
 
     if (!m68kdeb_pmmu_smoke_blob_len ||
         m68kdeb_pmmu_smoke_blob_len > PAGE_SIZE - sizeof(UWORD)) {
-        Printf("FAIL blob_len=%lu
-", (ULONG)m68kdeb_pmmu_smoke_blob_len);
+        Printf("FAIL blob_len=%lu\n", (ULONG)m68kdeb_pmmu_smoke_blob_len);
         return 20;
     }
 
     table_raw = (UBYTE *)AllocMem(TABLE_RAW_BYTES, MEMF_PUBLIC | MEMF_CLEAR);
     tramp_raw = (UBYTE *)AllocMem(TRAMP_RAW_BYTES, MEMF_PUBLIC | MEMF_CLEAR);
     if (!table_raw || !tramp_raw) {
-        Printf("FAIL alloc
-");
+        Printf("FAIL alloc\n");
         goto out;
     }
 
@@ -98,16 +95,13 @@ int main(void)
     srp[1] = (ULONG)root;
     CacheClearU();
 
-    Printf("table=0x%08lx tramp=0x%08lx scratch=0x%08lx ri=%lu pi=%lu ti=%lu
-",
+    Printf("table=0x%08lx tramp=0x%08lx scratch=0x%08lx ri=%lu pi=%lu ti=%lu\n",
            table_page, tramp_page, (ULONG)scratch, ri, pi, ti);
-    Printf("srp=%08lx:%08lx root=%08lx ptr=%08lx pte=%08lx blob_len=%lu
-",
+    Printf("srp=%08lx:%08lx root=%08lx ptr=%08lx pte=%08lx blob_len=%lu\n",
            srp[0], srp[1], root[ri], ptr[pi], pte[ti],
            (ULONG)m68kdeb_pmmu_smoke_blob_len);
     marker("SYS:m1-3b4b6b-pmmu-armed.marker",
-           "68030 same-page data-read FCL-off control armed
-");
+           "68030 same-page data-read FCL-off control armed\n");
 
     /* Match the historical known-good PMMU qualifier envelope exactly: keep
      * task switching/interrupt delivery out of the active-translation window. */
@@ -117,23 +111,18 @@ int main(void)
     if (old_user_sp) UserState(old_user_sp);
     Enable();
 
-    Printf("M68KDEB_PMMU_SMOKE_RETURN rc=%ld stage=%04lx
-",
+    Printf("M68KDEB_PMMU_SMOKE_RETURN rc=%ld stage=%04lx\n",
            rc, (ULONG)*scratch);
     /* The same-page constant is checked by the trampoline; scratch stays untouched. */
     if (rc == 0 && *scratch == 0xffffU) {
         marker("SYS:m1-3b4b6b-pmmu-returned.marker",
-               "68030 same-page data-read FCL-off control returned
-");
+               "68030 same-page data-read FCL-off control returned\n");
         marker("SYS:m1-3b4b6b-pmmu-pass.marker",
-               "68030 same-page data-read FCL-off control passed
-");
-        Printf("M68KDEB_PMMU_SMOKE_PASS
-");
+               "68030 same-page data-read FCL-off control passed\n");
+        Printf("M68KDEB_PMMU_SMOKE_PASS\n");
     } else {
         marker("SYS:m1-3b4b6b-pmmu-fail.marker",
-               "68030 same-page data-read FCL-off control failed
-");
+               "68030 same-page data-read FCL-off control failed\n");
         rc = 20;
     }
 
