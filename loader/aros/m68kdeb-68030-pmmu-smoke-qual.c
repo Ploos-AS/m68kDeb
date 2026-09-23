@@ -1,4 +1,4 @@
-/* M1.3b.4b.6b-PMMU isolated FS-UAE/AROS same-page data-read FCL-off qualification. */
+/* M1.3b.4b.6b-PMMU isolated FS-UAE/AROS Linux-style multi-page SRP/TC qualification. */
 #include <dos/dos.h>
 #include <exec/memory.h>
 #include <exec/types.h>
@@ -8,7 +8,7 @@
 
 #define PAGE_SIZE 4096UL
 #define TABLE_RAW_BYTES (PAGE_SIZE * 2UL - 1UL)
-#define TRAMP_RAW_BYTES (PAGE_SIZE * 2UL - 1UL)
+#define TRAMP_RAW_BYTES (PAGE_SIZE * 3UL - 1UL)
 #define ROOT_TABLE_SIZE 128UL
 #define PTR_TABLE_SIZE 128UL
 #define PAGE_TABLE_SIZE 64UL
@@ -41,7 +41,7 @@ static LONG marker(const char *path, const char *text)
 int main(void)
 {
     UBYTE *table_raw = NULL, *tramp_raw = NULL;
-    ULONG table_page, tramp_page;
+    ULONG table_page, tramp_page, alias_page;
     ULONG *root, *ptr, *pte;
     ULONG srp[2];
     ULONG ri, pi, ti;
@@ -65,7 +65,7 @@ int main(void)
     }
 
     table_page = align_page((ULONG)table_raw);
-    tramp_page = align_page((ULONG)tramp_raw);
+    tramp_page = align_page((ULONG)tramp_raw);\n    alias_page = tramp_page + PAGE_SIZE;
     scratch = (UWORD *)(tramp_page + PAGE_SIZE - sizeof(UWORD));
     root = (ULONG *)table_page;
     ptr = (ULONG *)(table_page + 512UL);
@@ -83,7 +83,7 @@ int main(void)
     ti = (tramp_page >> PAGE_INDEX_SHIFT) & (PAGE_TABLE_SIZE - 1UL);
     root[ri] = ((ULONG)ptr & 0xffffff00UL) | TABLE_DESC;
     ptr[pi] = ((ULONG)pte & 0xffffff00UL) | TABLE_DESC;
-    pte[ti] = (tramp_page & 0xfffff000UL) | PAGE_DESC;
+    pte[ti] = (tramp_page & 0xfffff000UL) | PAGE_DESC;\n    /* 6b.13: map the immediately following logical page too, mirroring the\n     * Linux transition where instruction fetch continues through a populated\n     * hierarchy rather than a one-page synthetic island. */\n    pte[(ti + 1UL) & (PAGE_TABLE_SIZE - 1UL)] = alias_page | PAGE_DESC;
 
     srp[0] = 0x80000002UL;
     srp[1] = (ULONG)root;
