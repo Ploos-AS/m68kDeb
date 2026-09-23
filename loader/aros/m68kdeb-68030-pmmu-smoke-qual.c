@@ -41,7 +41,7 @@ static LONG marker(const char *path, const char *text)
 int main(void)
 {
     UBYTE *table_raw = NULL, *tramp_raw = NULL;
-    ULONG table_page, tramp_page, alias_page;
+    ULONG table_page, tramp_page;
     ULONG *root, *ptr, *pte;
     ULONG srp[2];
     ULONG ri, pi, ti;
@@ -66,7 +66,6 @@ int main(void)
 
     table_page = align_page((ULONG)table_raw);
     tramp_page = align_page((ULONG)tramp_raw);
-    alias_page = tramp_page + PAGE_SIZE;
     scratch = (UWORD *)(tramp_page + PAGE_SIZE - sizeof(UWORD));
     root = (ULONG *)table_page;
     ptr = (ULONG *)(table_page + 512UL);
