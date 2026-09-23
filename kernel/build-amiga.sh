@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-# M1.3b.4b.6b.11 runtime diagnostics for the 68030 Linux MMU handoff.
+# M1.3b.4b.6b.12 runtime diagnostics for the 68030 Linux MMU handoff.
 LINUX_VERSION=${LINUX_VERSION:-7.2.4}
 LINUX_SHA256=${LINUX_SHA256:-01710ee01737dac492f1bae52becd057e08d20d11589089aa06accff415c28dd}
 JOBS=${JOBS:-2}
@@ -187,6 +187,41 @@ tc_repl = (
     "\tmovel\t%d1,%d0\n"
     "\tandl\t#0xfffff000,%d0\n"
     "\tputn\t%d0\n"
+    # 6b.12: qualify the exact instruction-fetch page used by PMOVE TC and
+    # the immediately following long jump. 1f is the post-enable target; the
+    # PMOVE itself is immediately before it and therefore normally shares this
+    # page. Dump page offsets plus the resolved PTE so a page-boundary/fetch
+    # mismatch is visible before translation is enabled.
+    "\tputc\t'F'\n"
+    "\tlea\t%pc@(1f),%a1\n"
+    "\tmovel\t%a1,%d0\n"
+    "\tputn\t%d0\n"
+    "\tandl\t#0x00000fff,%d0\n"
+    "\tputn\t%d0\n"
+    "\tmovel\t%a1,%d0\n"
+    "\tmoveq\t#ROOT_INDEX_SHIFT,%d1\n"
+    "\tlsrl\t%d1,%d0\n"
+    "\tandl\t#ROOT_TABLE_SIZE-1,%d0\n"
+    "\tmovel\t%a3@(%d0*4),%d1\n"
+    "\tandl\t#0xffffff00,%d1\n"
+    "\tmovel\t%d1,%a1\n"
+    "\tlea\t%pc@(1f),%a0\n"
+    "\tmovel\t%a0,%d0\n"
+    "\tmoveq\t#PTR_INDEX_SHIFT,%d1\n"
+    "\tlsrl\t%d1,%d0\n"
+    "\tandl\t#PTR_TABLE_SIZE-1,%d0\n"
+    "\tmovel\t%a1@(%d0*4),%d1\n"
+    "\tandl\t#0xffffff00,%d1\n"
+    "\tmovel\t%d1,%a1\n"
+    "\tmovel\t%a0,%d0\n"
+    "\tmoveq\t#PAGE_INDEX_SHIFT,%d1\n"
+    "\tlsrl\t%d1,%d0\n"
+    "\tandl\t#PAGE_TABLE_SIZE-1,%d0\n"
+    "\tmovel\t%a1@(%d0*4),%d1\n"
+    "\tputn\t%d1\n"
+    "\tmovel\t%d1,%d0\n"
+    "\tandl\t#0xfffff000,%d0\n"
+    "\tputn\t%d0\n"
     # Restore the mmu_engage temporary descriptor pointer after diagnostics.
     "\tlea\t%pc@(L(mmu_engage_030_temp)),%a0\n"
     "\tmovel\t#0x82c07760,%a0@(8)\n"
@@ -203,7 +238,7 @@ block = block[:tc_pos] + tc_repl + block[tc_pos + len(tc_anchor):]
 text = text[:start] + block + text[end:]
 path.write_text(text)
 PY
-printf '%s\n' 'H->J(entry)->K(SRP)->L(PFLUSHA)->T(a3,a2,TT1)->S(srp-image)->Q(srp-readback,tc-readback,sr)->R(logical-map)->P(physical-map)->M(pre-TC)->long-jump->N' > "$OUT/MMU_68030_TRACE.txt"
+printf '%s\n' 'H->J(entry)->K(SRP)->L(PFLUSHA)->T(a3,a2,TT1)->S(srp-image)->Q(srp-readback,tc-readback,sr)->R(logical-map)->P(physical-map)->F(post-TC-fetch-page)->M(pre-TC)->long-jump->N' > "$OUT/MMU_68030_TRACE.txt"
 
 make -C "$SRC" ARCH=m68k CROSS_COMPILE=m68k-linux-gnu- amiga_defconfig
 
