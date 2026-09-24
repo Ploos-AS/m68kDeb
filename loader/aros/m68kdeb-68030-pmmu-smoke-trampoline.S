@@ -17,11 +17,20 @@
 m68kdeb_68030_pmmu_smoke_entry:
 	.chip	68030
 	movel	4(%sp),%a0		/* srp */
+	movel	8(%sp),%a2		/* logical alias of this trampoline */
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 	pmove	%a0@,%srp
 	pflusha
 	pmove	%a1@,%tc
-	movel	%a1@(8),%d1		/* supervisor-data read, same mapped page */
+	/* 6b.19: mirror Linux: after TC enable, transfer execution to the
+	 * separately mapped logical alias before doing any further work. */
+	lea	%pc@(1f),%a3
+	subl	#0,%a3
+	movel	%a2,%d0
+	addl	%a3,%d0
+	subl	#0,%d0
+	jmp	%d0@
+1:	movel	%a1@(8),%d1		/* supervisor-data read, same mapped page */
 	pmove	%a1@(4),%tc
 	pflusha
 	moveq	#0,%d0
