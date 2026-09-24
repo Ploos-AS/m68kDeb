@@ -222,6 +222,24 @@ tc_repl = (
     "\tmovel\t%d1,%d0\n"
     "\tandl\t#0xfffff000,%d0\n"
     "\tputn\t%d0\n"
+    # 6b.15: dump neighboring PTEs around the post-TC fetch page.
+    "\tputc\t'V'\n"
+    "\tmovel\t%a0,%d0\n"
+    "\tmoveq\t#PAGE_INDEX_SHIFT,%d1\n"
+    "\tlsrl\t%d1,%d0\n"
+    "\tandl\t#PAGE_TABLE_SIZE-1,%d0\n"
+    "\tlsll\t#2,%d0\n"
+    "\tlea\t%a1@(%d0),%a1\n"
+    "\tmovel\t%a1@(-8),%d0\n"
+    "\tputn\t%d0\n"
+    "\tmovel\t%a1@(-4),%d0\n"
+    "\tputn\t%d0\n"
+    "\tmovel\t%a1@,%d0\n"
+    "\tputn\t%d0\n"
+    "\tmovel\t%a1@(4),%d0\n"
+    "\tputn\t%d0\n"
+    "\tmovel\t%a1@(8),%d0\n"
+    "\tputn\t%d0\n"
     # Restore the mmu_engage temporary descriptor pointer after diagnostics.
     "\tlea\t%pc@(L(mmu_engage_030_temp)),%a0\n"
     "\tmovel\t#0x82c07760,%a0@(8)\n"
@@ -238,7 +256,7 @@ block = block[:tc_pos] + tc_repl + block[tc_pos + len(tc_anchor):]
 text = text[:start] + block + text[end:]
 path.write_text(text)
 PY
-printf '%s\n' 'H->J(entry)->K(SRP)->L(PFLUSHA)->T(a3,a2,TT1)->S(srp-image)->Q(srp-readback,tc-readback,sr)->R(logical-map)->P(physical-map)->F(post-TC-fetch-page)->M(pre-TC)->long-jump->N' > "$OUT/MMU_68030_TRACE.txt"
+printf '%s\n' 'H->J(entry)->K(SRP)->L(PFLUSHA)->T(a3,a2,TT1)->S(srp-image)->Q(srp-readback,tc-readback,sr)->R(logical-map)->P(physical-map)->F(post-TC-fetch-page)->V(fetch-neighbor-PTEs)->M(pre-TC)->long-jump->N' > "$OUT/MMU_68030_TRACE.txt"
 
 make -C "$SRC" ARCH=m68k CROSS_COMPILE=m68k-linux-gnu- amiga_defconfig
 
