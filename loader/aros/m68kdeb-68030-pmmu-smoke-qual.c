@@ -69,7 +69,9 @@ int main(void)
     scratch = (UWORD *)(tramp_page + PAGE_SIZE - sizeof(UWORD));
     root = (ULONG *)table_page;
     ptr = (ULONG *)(table_page + 512UL);
-    pte = (ULONG *)(table_page + 1024UL);\n    ptr_alias = (ULONG *)(table_page + 1536UL);\n    pte_alias = (ULONG *)(table_page + 2048UL);
+    pte = (ULONG *)(table_page + 1024UL);
+    ptr_alias = (ULONG *)(table_page + 1536UL);
+    pte_alias = (ULONG *)(table_page + 2048UL);
 
     CopyMem(m68kdeb_pmmu_smoke_blob, (APTR)tramp_page,
             (ULONG)m68kdeb_pmmu_smoke_blob_len);
