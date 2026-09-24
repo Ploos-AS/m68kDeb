@@ -1,4 +1,4 @@
-/* M1.3b.4b.6b-PMMU isolated FS-UAE/AROS Linux-layout dual-alias page-table SRP/TC qualification. */
+/* M1.3b.4b.6b-PMMU isolated FS-UAE/AROS Linux-layout post-TC alias-jump SRP/TC qualification. */
 #include <dos/dos.h>
 #include <exec/memory.h>
 #include <exec/types.h>
@@ -87,14 +87,14 @@ int main(void)
     root[ri] = ((ULONG)ptr & 0xffffff00UL) | TABLE_DESC;
     ptr[pi] = ((ULONG)pte & 0xffffff00UL) | TABLE_DESC;
     pte[ti] = (tramp_page & 0xfffff000UL) | PAGE_DESC;
-    /* 6b.18: reproduce the sparse Linux fetch-page pattern observed by 6b.15:
+    /* 6b.19: reproduce the sparse Linux fetch-page pattern observed by 6b.15:
      * only the executing page and its immediate successor are present while
      * neighboring PTEs remain zero. Keep the exact Linux TC/SRP geometry. */
     pte[ti] = (tramp_page & 0xfffff000UL) | PAGE_DESC;
     pte[(ti + 1UL) & (PAGE_TABLE_SIZE - 1UL)] =
         ((tramp_page + PAGE_SIZE) & 0xfffff000UL) | PAGE_DESC;
 
-    /* 6b.18: add a second Linux-like root/pointer path that converges on the
+    /* 6b.19: add a second Linux-like root/pointer path that converges on the
      * same physical trampoline page. 0x40000000 selects a distinct 7-bit root
      * index while preserving the lower pointer/page indices. */
     alias_addr = tramp_page ^ 0x40000000UL;
@@ -117,13 +117,13 @@ int main(void)
            srp[0], srp[1], root[ri], ptr[pi], pte[ti],
            (ULONG)m68kdeb_pmmu_smoke_blob_len);
     marker("SYS:m1-3b4b6b-pmmu-armed.marker",
-           "68030 Linux-layout dual-alias page-table control armed\n");
+           "68030 Linux-layout post-TC alias-jump control armed\n");
 
     /* Match the historical known-good PMMU qualifier envelope exactly: keep
      * task switching/interrupt delivery out of the active-translation window. */
     Disable();
     old_user_sp = SuperState();
-    rc = ((smoke_fn_t)tramp_page)(srp, 0UL, scratch);
+    rc = ((smoke_fn_t)tramp_page)(srp, alias_addr, scratch);
     if (old_user_sp) UserState(old_user_sp);
     Enable();
 
@@ -132,13 +132,13 @@ int main(void)
     /* The same-page constant is checked by the trampoline; scratch stays untouched. */
     if (rc == 0 && *scratch == 0xffffU) {
         marker("SYS:m1-3b4b6b-pmmu-returned.marker",
-               "68030 Linux-layout dual-alias page-table control returned\n");
+               "68030 Linux-layout post-TC alias-jump control returned\n");
         marker("SYS:m1-3b4b6b-pmmu-pass.marker",
-               "68030 Linux-layout dual-alias page-table control passed\n");
+               "68030 Linux-layout post-TC alias-jump control passed\n");
         Printf("M68KDEB_PMMU_SMOKE_PASS\n");
     } else {
         marker("SYS:m1-3b4b6b-pmmu-fail.marker",
-               "68030 Linux-layout dual-alias page-table control failed\n");
+               "68030 Linux-layout post-TC alias-jump control failed\n");
         rc = 20;
     }
 
