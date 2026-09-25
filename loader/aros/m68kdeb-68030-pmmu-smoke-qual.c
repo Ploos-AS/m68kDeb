@@ -1,4 +1,4 @@
-/* M1.3b.4b.6b.24-PMMU isolated same-pointer distinct-PTE alias-fetch qualification. */
+/* M1.3b.4b.6b.25-PMMU exact-address post-TC jump control. */
 #include <dos/dos.h>
 #include <exec/memory.h>
 #include <exec/types.h>
@@ -92,22 +92,19 @@ int main(void)
     pte[(ti + 1UL) & (PAGE_TABLE_SIZE - 1UL)] =
         ((tramp_page + PAGE_SIZE) & 0xfffff000UL) | PAGE_DESC;
 
-    /* 6b.24: 6b.23 also fails when the alias stays in the same root slot but
-     * changes pointer-table index. Move the alias down one level again: keep
-     * the SAME root and pointer indices and select only a distinct PTE. Both
-     * PTEs converge on the same physical trampoline page. This determines
-     * whether any translated virtual-page alias is sufficient to reproduce
-     * the post-TC instruction-fetch failure. */
-    alias_addr = tramp_page ^ 0x00001000UL;
+    /* 6b.25 control: keep the 6b.24 trampoline and post-TC jump sequence,
+     * but make the jump target the exact identity virtual address. If this
+     * passes while 6b.24 fails, the regression boundary is specifically the
+     * change of virtual page, not the jump/trampoline sequence itself. */
+    alias_addr = tramp_page;
     alias_ri = (alias_addr >> ROOT_INDEX_SHIFT) & (ROOT_TABLE_SIZE - 1UL);
     alias_pi = (alias_addr >> PTR_INDEX_SHIFT) & (PTR_TABLE_SIZE - 1UL);
     alias_ti = (alias_addr >> PAGE_INDEX_SHIFT) & (PAGE_TABLE_SIZE - 1UL);
-    if (alias_ri != ri || alias_pi != pi || alias_ti == ti) {
-        Printf("FAIL alias indices ri=%lu/%lu pi=%lu/%lu ti=%lu/%lu\n",
+    if (alias_ri != ri || alias_pi != pi || alias_ti != ti) {
+        Printf("FAIL identity indices ri=%lu/%lu pi=%lu/%lu ti=%lu/%lu\\n",
                ri, alias_ri, pi, alias_pi, ti, alias_ti);
         goto out;
     }
-    pte[alias_ti] = (tramp_page & 0xfffff000UL) | PAGE_DESC;
 
     srp[0] = 0x80000002UL;
     srp[1] = (ULONG)root;
@@ -119,7 +116,7 @@ int main(void)
            srp[0], srp[1], root[ri], ptr[pi], pte[ti],
            (ULONG)m68kdeb_pmmu_smoke_blob_len);
     marker("SYS:m1-3b4b6b-pmmu-armed.marker",
-           "68030 same-pointer distinct-PTE alias-fetch control armed\n");
+           "68030 exact-address post-TC jump control armed\n");
 
     /* Match the historical known-good PMMU qualifier envelope exactly: keep
      * task switching/interrupt delivery out of the active-translation window. */
@@ -134,13 +131,13 @@ int main(void)
     /* The same-page constant is checked by the trampoline; scratch stays untouched. */
     if (rc == 0 && *scratch == 0xffffU) {
         marker("SYS:m1-3b4b6b-pmmu-returned.marker",
-               "68030 same-pointer distinct-PTE alias-fetch control returned\n");
+               "68030 exact-address post-TC jump control returned\n");
         marker("SYS:m1-3b4b6b-pmmu-pass.marker",
-               "68030 same-pointer distinct-PTE alias-fetch control passed\n");
+               "68030 exact-address post-TC jump control passed\n");
         Printf("M68KDEB_PMMU_SMOKE_PASS\n");
     } else {
         marker("SYS:m1-3b4b6b-pmmu-fail.marker",
-               "68030 same-pointer distinct-PTE alias-fetch control failed\n");
+               "68030 exact-address post-TC jump control failed\n");
         rc = 20;
     }
 
