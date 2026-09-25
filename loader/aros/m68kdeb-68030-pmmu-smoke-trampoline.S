@@ -18,7 +18,6 @@ m68kdeb_68030_pmmu_smoke_entry:
 	.chip	68030
 	movel	4(%sp),%a0		/* srp */
 	movel	8(%sp),%a2		/* logical alias of this trampoline */
-	movel	8(%sp),%a2		/* logical alias of this trampoline */
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 	pmove	%a0@,%srp
 	pflusha
