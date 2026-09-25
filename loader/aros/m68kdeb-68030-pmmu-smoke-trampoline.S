@@ -1,5 +1,5 @@
 /*
- * M1.3b.4b.6b-PMMU: same-page data read with FCL disabled.
+ * M1.3b.4b.6b.20-PMMU: isolate post-TC logical-alias instruction fetch.
  *
  * int entry(const ULONG srp[2], ULONG alias_page, UWORD *stage);
  *
@@ -21,15 +21,20 @@ m68kdeb_68030_pmmu_smoke_entry:
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 	pmove	%a0@,%srp
 	pflusha
-	pmove	%a1@,%tc
-	/* 6b.19: mirror Linux: after TC enable, transfer execution to the
-	 * separately mapped logical alias before doing any further work. */
+	/* 6b.20: precompute both destinations while translation is off.
+	 * The logical-alias path executes only register/branch instructions,
+	 * then returns to the identity path before touching data. This separates
+	 * alias instruction fetch from supervisor-data access after the jump. */
 	lea	%pc@(1f),%a3
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_entry),%a4
 	subl	%a4,%a3
 	addl	%a2,%a3
+	lea	%pc@(2f),%a4
+	pmove	%a1@,%tc
 	jmp	%a3@
-1:	movel	%a1@(8),%d1		/* supervisor-data read, same mapped page */
+1:	moveq	#0x2a,%d1
+	jmp	%a4@
+2:	movel	%a1@(8),%d1		/* identity-path data read after alias fetch */
 	pmove	%a1@(4),%tc
 	pflusha
 	moveq	#0,%d0
