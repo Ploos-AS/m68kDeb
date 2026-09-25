@@ -1,5 +1,5 @@
 /*
- * M1.3b.4b.6b.21-PMMU: isolate first post-TC logical-alias instruction fetch.
+ * M1.3b.4b.6b.22-PMMU: reproduce Linux TT1 plus logical-alias fetch.
  *
  * int entry(const ULONG srp[2], ULONG alias_page, UWORD *stage);
  *
@@ -21,7 +21,7 @@ m68kdeb_68030_pmmu_smoke_entry:
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 	pmove	%a0@,%srp
 	pflusha
-	/* 6b.21: precompute the logical alias target, the physical return target,
+	/* 6b.22: reproduce Linux's active Amiga 68030 Zorro III TT1 while the\n\t * low logical alias is translated through SRP. Precompute the logical alias target,\n\t * the physical return target,
 	 * and the physical address of the zero TC image while translation is off.
 	 * After the first instruction fetch through the logical alias, immediately
 	 * disable TC through the already-qualified identity mapping and return.
