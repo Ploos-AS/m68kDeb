@@ -85,18 +85,19 @@ int main(void)
     root[ri] = ((ULONG)ptr & 0xffffff00UL) | TABLE_DESC;
     ptr[pi] = ((ULONG)pte & 0xffffff00UL) | TABLE_DESC;
     pte[ti] = (tramp_page & 0xfffff000UL) | PAGE_DESC;
-    /* 6b.21: reproduce the sparse Linux fetch-page pattern observed by 6b.15:
+    /* 6b.22: reproduce the sparse Linux fetch-page pattern observed by 6b.15:
      * only the executing page and its immediate successor are present while
      * neighboring PTEs remain zero. Keep the exact Linux TC/SRP geometry. */
     pte[ti] = (tramp_page & 0xfffff000UL) | PAGE_DESC;
     pte[(ti + 1UL) & (PAGE_TABLE_SIZE - 1UL)] =
         ((tramp_page + PAGE_SIZE) & 0xfffff000UL) | PAGE_DESC;
 
-    /* 6b.21: execute through a distinct logical root index, but deliberately
-     * share the lower pointer/page hierarchy with the identity mapping.
-     * This isolates alias instruction fetch/root selection from the separate
-     * lower-level table copies used by 6b.19/6b.20. */
-    alias_addr = tramp_page ^ 0x40000000UL;
+    /* 6b.22: keep the 6b.21 shared lower hierarchy but move the alias only
+     * one 32 MiB root slot away. 6b.21 used the Linux-like 0x40000000 delta
+     * and failed before returning. This A/B test distinguishes a generic
+     * distinct-root instruction-fetch problem from the specific low/high
+     * root selection exercised by Linux's physical/logical aliases. */
+    alias_addr = tramp_page ^ 0x02000000UL;
     alias_ri = (alias_addr >> ROOT_INDEX_SHIFT) & (ROOT_TABLE_SIZE - 1UL);
     alias_pi = (alias_addr >> PTR_INDEX_SHIFT) & (PTR_TABLE_SIZE - 1UL);
     alias_ti = (alias_addr >> PAGE_INDEX_SHIFT) & (PAGE_TABLE_SIZE - 1UL);
@@ -117,7 +118,7 @@ int main(void)
            srp[0], srp[1], root[ri], ptr[pi], pte[ti],
            (ULONG)m68kdeb_pmmu_smoke_blob_len);
     marker("SYS:m1-3b4b6b-pmmu-armed.marker",
-           "68030 Linux-layout shared-hierarchy alias-fetch control armed\n");
+           "68030 adjacent-root shared-hierarchy alias-fetch control armed\n");
 
     /* Match the historical known-good PMMU qualifier envelope exactly: keep
      * task switching/interrupt delivery out of the active-translation window. */
@@ -132,13 +133,13 @@ int main(void)
     /* The same-page constant is checked by the trampoline; scratch stays untouched. */
     if (rc == 0 && *scratch == 0xffffU) {
         marker("SYS:m1-3b4b6b-pmmu-returned.marker",
-               "68030 Linux-layout shared-hierarchy alias-fetch control returned\n");
+               "68030 adjacent-root shared-hierarchy alias-fetch control returned\n");
         marker("SYS:m1-3b4b6b-pmmu-pass.marker",
-               "68030 Linux-layout shared-hierarchy alias-fetch control passed\n");
+               "68030 adjacent-root shared-hierarchy alias-fetch control passed\n");
         Printf("M68KDEB_PMMU_SMOKE_PASS\n");
     } else {
         marker("SYS:m1-3b4b6b-pmmu-fail.marker",
-               "68030 Linux-layout shared-hierarchy alias-fetch control failed\n");
+               "68030 adjacent-root shared-hierarchy alias-fetch control failed\n");
         rc = 20;
     }
 
