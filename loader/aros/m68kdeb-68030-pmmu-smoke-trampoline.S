@@ -1,5 +1,5 @@
 /*
- * M1.3b.4b.6b.20-PMMU: isolate post-TC logical-alias instruction fetch.
+ * M1.3b.4b.6b.21-PMMU: isolate first post-TC logical-alias instruction fetch.
  *
  * int entry(const ULONG srp[2], ULONG alias_page, UWORD *stage);
  *
@@ -21,27 +21,28 @@ m68kdeb_68030_pmmu_smoke_entry:
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 	pmove	%a0@,%srp
 	pflusha
-	/* 6b.20: precompute both destinations while translation is off.
-	 * The logical-alias path executes only register/branch instructions,
-	 * then returns to the identity path before touching data. This separates
-	 * alias instruction fetch from supervisor-data access after the jump. */
+	/* 6b.21: precompute the logical alias target, the physical return target,
+	 * and the physical address of the zero TC image while translation is off.
+	 * After the first instruction fetch through the logical alias, immediately
+	 * disable TC through the already-qualified identity mapping and return.
+	 * This removes the alias->identity jump while TC is active from 6b.20. */
 	lea	%pc@(1f),%a3
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_entry),%a4
 	subl	%a4,%a3
 	addl	%a2,%a3
 	lea	%pc@(2f),%a4
+	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc+4),%a5
 	pmove	%a1@,%tc
 	jmp	%a3@
 1:	moveq	#0x2a,%d1
-	jmp	%a4@
-2:	movel	%a1@(8),%d1		/* identity-path data read after alias fetch */
-	pmove	%a1@(4),%tc
+	pmove	%a5@,%tc
 	pflusha
-	moveq	#0,%d0
-	cmpl	#0x13579bdf,%d1
-	beq	1f
+	jmp	%a4@
+2:	moveq	#0,%d0
+	cmpl	#0x2a,%d1
+	beq	3f
 	moveq	#1,%d0
-1:
+3:
 	rts
 
 	.balign 4
