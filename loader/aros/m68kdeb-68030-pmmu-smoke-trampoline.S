@@ -1,5 +1,5 @@
 /*
- * M1.3b.4b.6b.22-PMMU: reproduce Linux TT1 plus logical-alias fetch.
+ * M1.3b.4b.6b.26-PMMU: isolate first post-TC fall-through fetch.
  *
  * int entry(const ULONG srp[2], ULONG alias_page, UWORD *stage);
  *
@@ -21,28 +21,19 @@ m68kdeb_68030_pmmu_smoke_entry:
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 	pmove	%a0@,%srp
 	pflusha
-	/* 6b.22: reproduce Linux's active Amiga 68030 Zorro III TT1 while the\n\t * low logical alias is translated through SRP. Precompute the logical alias target,\n\t * the physical return target,
-	 * and the physical address of the zero TC image while translation is off.
-	 * After the first instruction fetch through the logical alias, immediately
-	 * disable TC through the already-qualified identity mapping and return.
-	 * This removes the alias->identity jump while TC is active from 6b.20. */
-	lea	%pc@(1f),%a3
-	lea	%pc@(m68kdeb_68030_pmmu_smoke_entry),%a4
-	subl	%a4,%a3
-	addl	%a2,%a3
-	lea	%pc@(2f),%a4
+	/* 6b.26 control: remove every post-TC jump. If this returns, the first
+	 * translated fall-through fetch is sound and the minimal failure boundary
+	 * is the control transfer performed while TC is active. */
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc+4),%a5
 	pmove	%a1@,%tc
-	jmp	%a3@
-1:	moveq	#0x2a,%d1
+	moveq	#0x2a,%d1
 	pmove	%a5@,%tc
 	pflusha
-	jmp	%a4@
-2:	moveq	#0,%d0
+	moveq	#0,%d0
 	cmpl	#0x2a,%d1
-	beq	3f
+	beq	1f
 	moveq	#1,%d0
-3:
+1:
 	rts
 
 	.balign 4
