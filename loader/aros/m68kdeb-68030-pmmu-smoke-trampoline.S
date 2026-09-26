@@ -1,5 +1,5 @@
 /*
- * M1.3b.4b.6b.32-PMMU: isolate harmless pre-enable register copy.
+ * M1.3b.4b.6b.31-PMMU: isolate post-TC PC-relative LEA.
  *
  * int entry(const ULONG srp[2], ULONG alias_page, UWORD *stage);
  *
@@ -20,9 +20,9 @@ m68kdeb_68030_pmmu_smoke_entry:
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 	pmove	%a0@,%srp
 	pflusha
-	/* 6b.32: sole executable delta from 6b.27 PASS. Copy a1 to a4, but\n	 * continue using a1 for enable, data read and disable exactly as before. */
-	movel	%a1,%a4
 	pmove	%a1@,%tc
+	/* 6b.31: sole delta from 6b.27 PASS: execute a PC-relative LEA while\n	 * translation is active, but do not use the result for TC disable. */
+	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc+4),%a5
 	movel	%a1@(8),%d1		/* supervisor-data read, same mapped page */
 	pmove	%a1@(4),%tc
 	pflusha
