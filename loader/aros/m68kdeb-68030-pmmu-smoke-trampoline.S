@@ -1,5 +1,5 @@
 /*
- * M1.3b.4b.6b.27-PMMU: exact known-PASS trampoline against current sparse tables.
+ * M1.3b.4b.6b.28-PMMU: isolate precomputed zero-TC pointer.
  *
  * int entry(const ULONG srp[2], ULONG alias_page, UWORD *stage);
  *
@@ -20,9 +20,11 @@ m68kdeb_68030_pmmu_smoke_entry:
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 	pmove	%a0@,%srp
 	pflusha
+	/* 6b.28: sole delta from 6b.27 PASS: precompute the address of the\n	 * zero TC image before enabling translation, then use that register to\n	 * disable TC. All post-enable data/check instructions remain unchanged. */
+	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc+4),%a5
 	pmove	%a1@,%tc
 	movel	%a1@(8),%d1		/* supervisor-data read, same mapped page */
-	pmove	%a1@(4),%tc
+	pmove	%a5@,%tc
 	pflusha
 	moveq	#0,%d0
 	cmpl	#0x13579bdf,%d1
