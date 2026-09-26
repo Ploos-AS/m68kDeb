@@ -1,5 +1,5 @@
 /*
- * M1.3b.4b.6b.29-PMMU: isolate precomputed pointer register.
+ * M1.3b.4b.6b.30-PMMU: recompute zero-TC pointer after enable.
  *
  * int entry(const ULONG srp[2], ULONG alias_page, UWORD *stage);
  *
@@ -20,11 +20,12 @@ m68kdeb_68030_pmmu_smoke_entry:
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 	pmove	%a0@,%srp
 	pflusha
-	/* 6b.29: keep a precomputed zero-TC pointer, but place it in a1 itself.\n	 * The enable operand uses a0-relative access to the TC image so the disable\n	 * remains a plain pmove %a1@,%tc. This separates register choice from the\n	 * precomputed-pointer addressing form. */
+	/* 6b.30: retain the pre-enable zero-TC pointer setup from 6b.29, but\n	 * recompute that pointer PC-relative after translation is enabled. If this\n	 * restores PASS, the failure is specifically stale physical pointer state\n	 * crossing PMOVE TC rather than register choice. */
 	movel	%a1,%a4
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc+4),%a1
 	pmove	%a4@,%tc
 	movel	%a4@(8),%d1		/* supervisor-data read, same mapped page */
+	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc+4),%a1
 	pmove	%a1@,%tc
 	pflusha
 	moveq	#0,%d0
