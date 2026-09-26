@@ -1,5 +1,5 @@
 /*
- * M1.3b.4b.6b.31-PMMU: isolate post-TC PC-relative LEA.
+ * M1.3b.4b.6b.31-PMMU: isolate harmless pre-enable LEA.
  *
  * int entry(const ULONG srp[2], ULONG alias_page, UWORD *stage);
  *
@@ -20,9 +20,9 @@ m68kdeb_68030_pmmu_smoke_entry:
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 	pmove	%a0@,%srp
 	pflusha
-	pmove	%a1@,%tc
-	/* 6b.31: sole delta from 6b.27 PASS: execute a PC-relative LEA while\n	 * translation is active, but do not use the result for TC disable. */
+	/* 6b.31: sole delta from 6b.27 PASS: compute the same zero-TC address\n	 * into an otherwise unused register before enable. The active-TC sequence\n	 * remains the exact known-PASS a1-relative sequence. */
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc+4),%a5
+	pmove	%a1@,%tc
 	movel	%a1@(8),%d1		/* supervisor-data read, same mapped page */
 	pmove	%a1@(4),%tc
 	pflusha
