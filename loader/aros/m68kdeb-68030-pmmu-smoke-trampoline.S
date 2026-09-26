@@ -1,5 +1,5 @@
 /*
- * M1.3b.4b.6b.26-PMMU: isolate first post-TC fall-through fetch.
+ * M1.3b.4b.6b.27-PMMU: exact known-PASS trampoline against current sparse tables.
  *
  * int entry(const ULONG srp[2], ULONG alias_page, UWORD *stage);
  *
@@ -17,20 +17,15 @@
 m68kdeb_68030_pmmu_smoke_entry:
 	.chip	68030
 	movel	4(%sp),%a0		/* srp */
-	movel	8(%sp),%a2		/* logical alias of this trampoline */
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 	pmove	%a0@,%srp
 	pflusha
-	/* 6b.26 control: remove every post-TC jump. If this returns, the first
-	 * translated fall-through fetch is sound and the minimal failure boundary
-	 * is the control transfer performed while TC is active. */
-	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc+4),%a5
 	pmove	%a1@,%tc
-	moveq	#0x2a,%d1
-	pmove	%a5@,%tc
+	movel	%a1@(8),%d1		/* supervisor-data read, same mapped page */
+	pmove	%a1@(4),%tc
 	pflusha
 	moveq	#0,%d0
-	cmpl	#0x2a,%d1
+	cmpl	#0x13579bdf,%d1
 	beq	1f
 	moveq	#1,%d0
 1:
