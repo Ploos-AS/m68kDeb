@@ -1,5 +1,5 @@
 /*
- * M1.3b.4b.6b.31-PMMU: isolate TC-image base register.
+ * M1.3b.4b.6b.32-PMMU: isolate harmless pre-enable register copy.
  *
  * int entry(const ULONG srp[2], ULONG alias_page, UWORD *stage);
  *
@@ -20,11 +20,11 @@ m68kdeb_68030_pmmu_smoke_entry:
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 	pmove	%a0@,%srp
 	pflusha
-	/* 6b.31: sole semantic delta from 6b.27 PASS is moving the TC-image base\n	 * from a1 to a4 before PMOVE. Disable again uses a4@(4), matching the exact\n	 * PASS addressing form while testing whether PMOVE/data access is sensitive\n	 * to which address register holds the same TC-image base. */
+	/* 6b.32: sole executable delta from 6b.27 PASS. Copy a1 to a4, but\n	 * continue using a1 for enable, data read and disable exactly as before. */
 	movel	%a1,%a4
-	pmove	%a4@,%tc
-	movel	%a4@(8),%d1		/* supervisor-data read, same mapped page */
-	pmove	%a4@(4),%tc
+	pmove	%a1@,%tc
+	movel	%a1@(8),%d1		/* supervisor-data read, same mapped page */
+	pmove	%a1@(4),%tc
 	pflusha
 	moveq	#0,%d0
 	cmpl	#0x13579bdf,%d1
