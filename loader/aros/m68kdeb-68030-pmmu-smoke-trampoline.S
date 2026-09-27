@@ -1,5 +1,5 @@
 /*
- * M1.3b.4b.6b.40-PMMU: bisect high register bit before TC.
+ * M1.3b.4b.6b.41-PMMU: move non-zero register write after TC enable.
  *
  * int entry(const ULONG srp[2], ULONG alias_page, UWORD *stage);
  *
@@ -20,13 +20,7 @@ m68kdeb_68030_pmmu_smoke_entry:
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 	pmove	%a0@,%srp
 	pflusha
-	/* 6b.40: 6b.39 fails with only bit 31 set. Move the single set bit to
-	 * bit 30 while preserving the exact six-byte immediate-move form and all
-	 * following instructions. This starts the value-bit bisection without
-	 * changing code size or the active-TC sequence. */
-	movel	#0x40000000,%d2
-	pmove	%a1@,%tc
-	movel	%a1@(8),%d1		/* supervisor-data read, same mapped page */
+	/* 6b.41: non-zero d2 values fail when established before TC enable.\n	 * Establish the minimal value after PMOVE TC instead. This separates\n	 * non-zero register state during translation from the pre-enable write. */\n	pmove	%a1@,%tc\n	movel	#0x00000001,%d2\n	movel	%a1@(8),%d1		/* supervisor-data read, same mapped page */
 	pmove	%a1@(4),%tc
 	pflusha
 	moveq	#0,%d0
