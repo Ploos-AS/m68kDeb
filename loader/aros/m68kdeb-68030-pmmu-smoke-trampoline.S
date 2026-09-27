@@ -1,5 +1,5 @@
 /*
- * M1.3b.4b.6b.36-PMMU: isolate immediate-move versus register-value state.
+ * M1.3b.4b.6b.37-PMMU: isolate zero register value before TC.
  *
  * int entry(const ULONG srp[2], ULONG alias_page, UWORD *stage);
  *
