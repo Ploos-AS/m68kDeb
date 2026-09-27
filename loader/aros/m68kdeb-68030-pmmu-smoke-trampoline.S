@@ -20,8 +20,7 @@ m68kdeb_68030_pmmu_smoke_entry:
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 	pmove	%a0@,%srp
 	pflusha
-	/* 6b.38: 6b.37 passes with d2 forced to zero, while 6b.35 fails\n	 * with 0x13579bdf. Use the smallest non-zero value with the same six-byte\n	 * immediate-move form. FAIL means non-zero state alone is sufficient; PASS\n	 * means particular value bits are involved. */\n\tmovel\t#0x00000001,%d2
-	pmove	%a1@,%tc
+	/* 6b.39: 6b.37 passes with d2 forced to zero. Test only bit 31 with\n	 * the same six-byte immediate-move form. This preserves instruction size\n	 * and isolates a high-bit register value across PMMU enable. */\n	movel	#0x80000000,%d2\n	pmove	%a1@,%tc
 	movel	%a1@(8),%d1		/* supervisor-data read, same mapped page */
 	pmove	%a1@(4),%tc
 	pflusha
