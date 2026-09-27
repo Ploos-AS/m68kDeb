@@ -1,5 +1,5 @@
 /*
- * M1.3b.4b.6b.33-PMMU: isolate a5 register write.
+ * M1.3b.4b.6b.34-PMMU: isolate address-register choice.
  *
  * int entry(const ULONG srp[2], ULONG alias_page, UWORD *stage);
  *
