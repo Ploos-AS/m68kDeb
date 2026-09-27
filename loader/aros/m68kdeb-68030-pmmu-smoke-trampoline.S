@@ -1,12 +1,15 @@
 /*
- * M1.3b.4b.6b.41-PMMU: move non-zero register write after TC enable.
+ * M1.3b.4b.6b.42-PMMU: isolate post-TC register write from data read.
  *
  * int entry(const ULONG srp[2], ULONG alias_page, UWORD *stage);
  *
- * Instruction fetch survives active TC, while reading the stage pointer hangs.
- * Read a constant embedded in the trampoline page instead. This keeps the
- * logical/physical page identical to the executing code and isolates
- * supervisor-data FC/page-walk behaviour from the external stage address.
+ * The known-good control keeps the translated execution page identical to
+ * the physical trampoline page. 6b.41 moved a non-zero d2 write after TC and
+ * then performed the supervisor data read. This variant keeps that write but
+ * disables TC immediately afterwards, before any translated data access.
+ * PASS means the register write itself is safe and the following data read
+ * is the narrower trigger. FAIL means merely changing a general register
+ * while TC is enabled is sufficient to reproduce the hang.
  */
 
 	.text
@@ -20,19 +23,14 @@ m68kdeb_68030_pmmu_smoke_entry:
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 	pmove	%a0@,%srp
 	pflusha
-	/* 6b.41: non-zero d2 values fail when established before TC enable.
-	 * Establish the minimal value after PMOVE TC instead. This separates
-	 * non-zero register state during translation from the pre-enable write. */
+	/* 6b.42: enable TC, change one general register, then immediately
+	 * restore TC=0 through the identity path. No translated data read occurs
+	 * while the non-zero register value is live. */
 	pmove	%a1@,%tc
 	movel	#0x00000001,%d2
-	movel	%a1@(8),%d1		/* supervisor-data read, same mapped page */
 	pmove	%a1@(4),%tc
 	pflusha
 	moveq	#0,%d0
-	cmpl	#0x13579bdf,%d1
-	beq	1f
-	moveq	#1,%d0
-1:
 	rts
 
 	.balign 4
