@@ -1,5 +1,5 @@
 /*
- * M1.3b.4b.6b.35-PMMU: isolate address versus data register state.
+ * M1.3b.4b.6b.36-PMMU: isolate immediate-move versus register-value state.
  *
  * int entry(const ULONG srp[2], ULONG alias_page, UWORD *stage);
  *
@@ -20,11 +20,11 @@ m68kdeb_68030_pmmu_smoke_entry:
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 	pmove	%a0@,%srp
 	pflusha
-	/* 6b.35: 6b.33 (a5) and 6b.34 (a4) both fail. Keep the same six-byte
-	 * immediate move and code layout, but write an otherwise unused data
-	 * register. PASS isolates the trigger to address-register state; FAIL shows
-	 * that carrying arbitrary changed register state across TC is sufficient. */
-	movel	#0x13579bdf,%d2
+	/* 6b.36: 6b.35 shows the failure is not address-register specific.
+	 * Preserve d2 exactly while still executing a register-writing instruction
+	 * before TC. PASS means the changed register value/state is the trigger;
+	 * FAIL means merely writing a general register before PMOVE TC is enough. */
+	movel	%d2,%d2
 	pmove	%a1@,%tc
 	movel	%a1@(8),%d1		/* supervisor-data read, same mapped page */
 	pmove	%a1@(4),%tc
