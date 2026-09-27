@@ -1,10 +1,10 @@
 /*
- * M1.3b.4b.6b.43-PMMU: isolate register value at TC enable.
+ * M1.3b.4b.6b.44-PMMU: isolate register-write history before TC.
  *
- * The prior bisect shows d2=0 before TC passes while d2=1 fails, and moving
- * d2=1 after TC also fails. This variant writes a non-zero value and restores
- * zero before PMOVE TC. PASS means the critical state is the register value
- * observed at TC enable, not merely executing a register-write instruction.
+ * 6b.43 failed even though d2 was restored to zero before PMOVE TC. Test the
+ * smallest possible state change: force d2 to zero once before TC, with no
+ * preceding non-zero value. This separates the historical 1->0 transition
+ * from simply executing an instruction that writes d2 before PMMU enable.
  */
 
 	.text
@@ -18,7 +18,6 @@ m68kdeb_68030_pmmu_smoke_entry:
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 	pmove	%a0@,%srp
 	pflusha
-	movel	#0x00000001,%d2
 	clrl	%d2
 	pmove	%a1@,%tc
 	movel	%a1@(8),%d1
