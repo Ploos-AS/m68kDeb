@@ -1,5 +1,5 @@
 /*
- * M1.3b.4b.6b.38-PMMU: test minimal non-zero register value before TC.
+ * M1.3b.4b.6b.39-PMMU: test high-bit-only non-zero register value before TC.
  *
  * int entry(const ULONG srp[2], ULONG alias_page, UWORD *stage);
  *
