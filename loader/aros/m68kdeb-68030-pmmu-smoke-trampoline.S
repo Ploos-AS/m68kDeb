@@ -1,5 +1,5 @@
 /*
- * M1.3b.4b.6b.37-PMMU: isolate zero register value before TC.
+ * M1.3b.4b.6b.38-PMMU: test minimal non-zero register value before TC.
  *
  * int entry(const ULONG srp[2], ULONG alias_page, UWORD *stage);
  *
@@ -20,11 +20,7 @@ m68kdeb_68030_pmmu_smoke_entry:
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 	pmove	%a0@,%srp
 	pflusha
-	/* 6b.36: 6b.35 shows the failure is not address-register specific.
-	 * Preserve d2 exactly while still executing a register-writing instruction
-	 * before TC. PASS means the changed register value/state is the trigger;
-	 * FAIL means merely writing a general register before PMOVE TC is enough. */
-	movel	%d2,%d2
+	/* 6b.38: 6b.37 passes with d2 forced to zero, while 6b.35 fails\n	 * with 0x13579bdf. Use the smallest non-zero value with the same six-byte\n	 * immediate-move form. FAIL means non-zero state alone is sufficient; PASS\n	 * means particular value bits are involved. */\n\tmovel\t#0x00000001,%d2
 	pmove	%a1@,%tc
 	movel	%a1@(8),%d1		/* supervisor-data read, same mapped page */
 	pmove	%a1@(4),%tc
