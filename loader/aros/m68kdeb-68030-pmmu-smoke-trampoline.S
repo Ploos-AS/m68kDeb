@@ -20,7 +20,12 @@ m68kdeb_68030_pmmu_smoke_entry:
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 	pmove	%a0@,%srp
 	pflusha
-	/* 6b.41: non-zero d2 values fail when established before TC enable.\n	 * Establish the minimal value after PMOVE TC instead. This separates\n	 * non-zero register state during translation from the pre-enable write. */\n	pmove	%a1@,%tc\n	movel	#0x00000001,%d2\n	movel	%a1@(8),%d1		/* supervisor-data read, same mapped page */
+	/* 6b.41: non-zero d2 values fail when established before TC enable.
+	 * Establish the minimal value after PMOVE TC instead. This separates
+	 * non-zero register state during translation from the pre-enable write. */
+	pmove	%a1@,%tc
+	movel	#0x00000001,%d2
+	movel	%a1@(8),%d1		/* supervisor-data read, same mapped page */
 	pmove	%a1@(4),%tc
 	pflusha
 	moveq	#0,%d0
