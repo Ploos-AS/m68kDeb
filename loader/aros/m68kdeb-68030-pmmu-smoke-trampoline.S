@@ -20,8 +20,11 @@ m68kdeb_68030_pmmu_smoke_entry:
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 	pmove	%a0@,%srp
 	pflusha
-	/* 6b.33: 6b.32 proved the 6-byte layout shift itself is harmless.\n	 * Replace the three NOPs with a 6-byte immediate move into a5. This writes\n	 * a5 without PC-relative address generation; PASS implicates LEA/address\n	 * generation, FAIL implicates merely carrying changed a5 state across TC. */
-	movel	#0x13579bdf,%a5
+	/* 6b.34: sole delta from 6b.33: write the same immediate value into a4.
+	 * Instruction size/layout and the active-TC sequence stay identical.
+	 * PASS isolates the failure to a5 state; FAIL shows that carrying a changed
+	 * general address register across TC is sufficient. */
+	movel	#0x13579bdf,%a4
 	pmove	%a1@,%tc
 	movel	%a1@(8),%d1		/* supervisor-data read, same mapped page */
 	pmove	%a1@(4),%tc
