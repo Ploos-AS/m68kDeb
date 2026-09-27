@@ -1,5 +1,5 @@
 /*
- * M1.3b.4b.6b.31-PMMU: isolate harmless pre-enable LEA.
+ * M1.3b.4b.6b.32-PMMU: isolate code-layout shift with NOP padding.
  *
  * int entry(const ULONG srp[2], ULONG alias_page, UWORD *stage);
  *
@@ -20,8 +20,10 @@ m68kdeb_68030_pmmu_smoke_entry:
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 	pmove	%a0@,%srp
 	pflusha
-	/* 6b.31: sole delta from 6b.27 PASS: compute the same zero-TC address\n	 * into an otherwise unused register before enable. The active-TC sequence\n	 * remains the exact known-PASS a1-relative sequence. */
-	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc+4),%a5
+	/* 6b.32: preserve the code-size/layout shift introduced by 6b.31 without\n	 * computing or retaining any pointer. Three NOPs match the 6-byte 68030\n	 * PC-relative LEA so PMOVE TC and the first post-enable fetch stay at the\n	 * same offsets. PASS would implicate LEA/register state; FAIL implicates\n	 * instruction placement/alignment. */
+	nop
+	nop
+	nop
 	pmove	%a1@,%tc
 	movel	%a1@(8),%d1		/* supervisor-data read, same mapped page */
 	pmove	%a1@(4),%tc
