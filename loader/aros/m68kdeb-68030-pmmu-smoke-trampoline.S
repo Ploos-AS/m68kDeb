@@ -1,5 +1,5 @@
 /*
- * M1.3b.4b.6b.39-PMMU: test high-bit-only non-zero register value before TC.
+ * M1.3b.4b.6b.40-PMMU: bisect high register bit before TC.
  *
  * int entry(const ULONG srp[2], ULONG alias_page, UWORD *stage);
  *
@@ -20,10 +20,11 @@ m68kdeb_68030_pmmu_smoke_entry:
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 	pmove	%a0@,%srp
 	pflusha
-	/* 6b.39: 6b.37 passes with d2 forced to zero. Test only bit 31 with
-	 * the same six-byte immediate-move form. This preserves instruction size
-	 * and isolates a high-bit register value across PMMU enable. */
-	movel	#0x80000000,%d2
+	/* 6b.40: 6b.39 fails with only bit 31 set. Move the single set bit to
+	 * bit 30 while preserving the exact six-byte immediate-move form and all
+	 * following instructions. This starts the value-bit bisection without
+	 * changing code size or the active-TC sequence. */
+	movel	#0x40000000,%d2
 	pmove	%a1@,%tc
 	movel	%a1@(8),%d1		/* supervisor-data read, same mapped page */
 	pmove	%a1@(4),%tc
