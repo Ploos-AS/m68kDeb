@@ -1,10 +1,10 @@
 /*
- * M1.3b.4b.6b.47-PMMU: force known non-zero value at TC enable.
+ * M1.3b.4b.6b.48-PMMU: isolate save/restore frame around TC.
  *
- * 6b.46 passes with d2 forced to zero at PMOVE TC. Keep the same save/restore
- * structure and change only the value present during active translation to
- * one. FAIL isolates the emulator sensitivity to the GPR value at TC enable;
- * PASS would point back to some other sequence/layout interaction.
+ * 6b.44 fails with a direct d2 write, while 6b.46/47 pass after adding a
+ * d2->d3 save and post-TC restore. Preserve that save/restore frame but do
+ * not modify d2 while translation is active. This isolates whether the
+ * passing behaviour comes from the frame itself rather than the TC-time value.
  */
 
 	.text
@@ -19,7 +19,6 @@ m68kdeb_68030_pmmu_smoke_entry:
 	pmove	%a0@,%srp
 	pflusha
 	movel	%d2,%d3
-	moveq	#1,%d2
 	pmove	%a1@,%tc
 	movel	%a1@(8),%d1
 	pmove	%a1@(4),%tc
