@@ -1,10 +1,10 @@
 /*
- * M1.3b.4b.6b.44-PMMU: isolate register-write history before TC.
+ * M1.3b.4b.6b.45-PMMU: change and restore register value before TC.
  *
- * 6b.43 failed even though d2 was restored to zero before PMOVE TC. Test the
- * smallest possible state change: force d2 to zero once before TC, with no
- * preceding non-zero value. This separates the historical 1->0 transition
- * from simply executing an instruction that writes d2 before PMMU enable.
+ * 6b.44 shows that changing d2 to zero before PMOVE TC is sufficient to fail.
+ * Change d2 and then exactly restore its entry value before TC. If this fails,
+ * transient register-value history is sufficient; if it passes, the value
+ * present at TC enable is what matters.
  */
 
 	.text
@@ -18,7 +18,8 @@ m68kdeb_68030_pmmu_smoke_entry:
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 	pmove	%a0@,%srp
 	pflusha
-	clrl	%d2
+	addql	#1,%d2
+	subql	#1,%d2
 	pmove	%a1@,%tc
 	movel	%a1@(8),%d1
 	pmove	%a1@(4),%tc
