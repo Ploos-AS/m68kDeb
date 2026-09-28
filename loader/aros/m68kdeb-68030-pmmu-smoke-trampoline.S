@@ -1,10 +1,10 @@
 /*
- * M1.3b.4b.6b.45-PMMU: change and restore register value before TC.
+ * M1.3b.4b.6b.46-PMMU: force known entry value at TC enable.
  *
- * 6b.44 shows that changing d2 to zero before PMOVE TC is sufficient to fail.
- * Change d2 and then exactly restore its entry value before TC. If this fails,
- * transient register-value history is sufficient; if it passes, the value
- * present at TC enable is what matters.
+ * 6b.45 passes when d2 is changed and restored to its unknown entry value.
+ * Force d2 to a known zero value immediately before PMOVE TC, then restore
+ * the saved entry value only after TC is disabled. This tests whether zero
+ * itself is safe at enable independently of the caller-provided d2 value.
  */
 
 	.text
@@ -18,12 +18,13 @@ m68kdeb_68030_pmmu_smoke_entry:
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 	pmove	%a0@,%srp
 	pflusha
-	addql	#1,%d2
-	subql	#1,%d2
+	movel	%d2,%d3
+	clrl	%d2
 	pmove	%a1@,%tc
 	movel	%a1@(8),%d1
 	pmove	%a1@(4),%tc
 	pflusha
+	movel	%d3,%d2
 	moveq	#0,%d0
 	cmpl	#0x13579bdf,%d1
 	beq	1f
