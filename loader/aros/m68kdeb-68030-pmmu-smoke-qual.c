@@ -1,4 +1,4 @@
-/* M1.3b.4b.6b.25-PMMU exact-address post-TC jump control. */
+/* M1.3b.4b.6b.52-PMMU post-TC jump addressing-mode control. */
 #include <dos/dos.h>
 #include <exec/memory.h>
 #include <exec/types.h>
@@ -38,24 +38,6 @@ static LONG marker(const char *path, const char *text)
     return n > 0 ? 0 : 20;
 }
 
-static LONG patch_abs_long_jump(UBYTE *blob, ULONG len, ULONG base)
-{
-    ULONG i, target;
-    for (i = 0; i + 6UL <= len; ++i) {
-        if (blob[i] == 0x4eU && blob[i + 1UL] == 0xf9U &&
-            blob[i + 2UL] == 0xdeU && blob[i + 3UL] == 0xadU &&
-            blob[i + 4UL] == 0xbeU && blob[i + 5UL] == 0xefU) {
-            target = base + i + 6UL;
-            blob[i + 2UL] = (UBYTE)(target >> 24);
-            blob[i + 3UL] = (UBYTE)(target >> 16);
-            blob[i + 4UL] = (UBYTE)(target >> 8);
-            blob[i + 5UL] = (UBYTE)target;
-            return 0;
-        }
-    }
-    return 20;
-}
-
 int main(void)
 {
     UBYTE *table_raw = NULL, *tramp_raw = NULL;
@@ -91,12 +73,6 @@ int main(void)
 
     CopyMem(m68kdeb_pmmu_smoke_blob, (APTR)tramp_page,
             (ULONG)m68kdeb_pmmu_smoke_blob_len);
-    if (patch_abs_long_jump((UBYTE *)tramp_page,
-                            (ULONG)m68kdeb_pmmu_smoke_blob_len,
-                            tramp_page) != 0) {
-        Printf("FAIL absolute-long jump sentinel not found\\n");
-        goto out;
-    }
     *scratch = 0xffffU;
 
     /* TC is enabled briefly, so use the same real identity hierarchy as the
