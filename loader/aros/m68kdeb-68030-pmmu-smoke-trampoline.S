@@ -1,10 +1,10 @@
 /*
- * M1.3b.4b.6b.48-PMMU: isolate save/restore frame around TC.
+ * M1.3b.4b.6b.49-PMMU: add Linux-style post-enable long jump.
  *
- * 6b.44 fails with a direct d2 write, while 6b.46/47 pass after adding a
- * d2->d3 save and post-TC restore. Preserve that save/restore frame but do
- * not modify d2 while translation is active. This isolates whether the
- * passing behaviour comes from the frame itself rather than the TC-time value.
+ * 6b.48 proves the save/restore frame itself is safe. Keep that known-PASS
+ * register state and add the next material operation from Linux mmu_engage_030:
+ * a long jump immediately after PMOVE TC. The target stays in the same
+ * identity-mapped trampoline, isolating post-enable control transfer.
  */
 
 	.text
@@ -20,15 +20,17 @@ m68kdeb_68030_pmmu_smoke_entry:
 	pflusha
 	movel	%d2,%d3
 	pmove	%a1@,%tc
+	jmp	%pc@(1f)
+1:
 	movel	%a1@(8),%d1
 	pmove	%a1@(4),%tc
 	pflusha
 	movel	%d3,%d2
 	moveq	#0,%d0
 	cmpl	#0x13579bdf,%d1
-	beq	1f
+	beq	2f
 	moveq	#1,%d0
-1:
+2:
 	rts
 
 	.balign 4
