@@ -1,10 +1,10 @@
 /*
- * M1.3b.4b.6b.49-PMMU: add Linux-style post-enable long jump.
+ * M1.3b.4b.6b.50-PMMU: use exact Linux post-enable long jump.
  *
- * 6b.48 proves the save/restore frame itself is safe. Keep that known-PASS
- * register state and add the next material operation from Linux mmu_engage_030:
- * a long jump immediately after PMOVE TC. The target stays in the same
- * identity-mapped trampoline, isolating post-enable control transfer.
+ * 6b.49 passes with a PC-relative jump after PMOVE TC. Linux mmu_engage_030
+ * instead uses an explicit absolute-long jump (jmp 1f:l). Keep the known-PASS
+ * register/table state and change only that encoding to test the exact
+ * post-enable control-transfer form used by Linux.
  */
 
 	.text
@@ -20,7 +20,7 @@ m68kdeb_68030_pmmu_smoke_entry:
 	pflusha
 	movel	%d2,%d3
 	pmove	%a1@,%tc
-	jmp	%pc@(1f)
+	jmp	1f:l
 1:
 	movel	%a1@(8),%d1
 	pmove	%a1@(4),%tc
