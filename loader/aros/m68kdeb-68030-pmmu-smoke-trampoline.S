@@ -1,10 +1,10 @@
 /*
- * M1.3b.4b.6b.52-PMMU: isolate post-TC absolute-long jump decoding.
+ * M1.3b.4b.6b.53-PMMU: compute register-indirect jump target after TC.
  *
- * 6b.51 passes on current FS-UAE and Amiberry but fails on FS-UAE 3.2.35
- * after PMOVE TC. Precompute the identical fall-through target in a0 before
- * enabling translation, then use register-indirect JMP after TC. PASS on
- * 3.2.35 isolates its regression to the post-enable absolute-long JMP path.
+ * 6b.52 passes on FS-UAE, FS-UAE 3.2.35 and Amiberry when the target is
+ * computed before PMOVE TC and the active-translation jump is register
+ * indirect. Move only the PC-relative LEA across PMOVE TC. This separates
+ * post-enable effective-address computation from JMP register-indirect itself.
  */
 
 	.text
@@ -19,8 +19,8 @@ m68kdeb_68030_pmmu_smoke_entry:
 	pmove	%a0@,%srp
 	pflusha
 	movel	%d2,%d3
-	lea	%pc@(1f),%a0
 	pmove	%a1@,%tc
+	lea	%pc@(1f),%a0
 	jmp	%a0@
 1:
 	movel	%a1@(8),%d1
