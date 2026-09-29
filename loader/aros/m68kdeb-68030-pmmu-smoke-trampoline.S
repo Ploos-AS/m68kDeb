@@ -1,10 +1,10 @@
 /*
- * M1.3b.4b.6b.50-PMMU: use exact Linux post-enable long jump.
+ * M1.3b.4b.6b.51-PMMU: runtime-relocate exact Linux absolute-long jump.
  *
- * 6b.49 passes with a PC-relative jump after PMOVE TC. Linux mmu_engage_030
- * instead uses an explicit absolute-long jump (jmp 1f:l). Keep the known-PASS
- * register/table state and change only that encoding to test the exact
- * post-enable control-transfer form used by Linux.
+ * 6b.50 exposed that an absolute-long jump cannot be copied as a raw blob without
+ * relocating its embedded address. Emit the exact 4ef9 absolute-long opcode
+ * with a sentinel operand; the qualifier patches that operand to the copied
+ * runtime target before execution. This isolates the Linux jump encoding.
  */
 
 	.text
@@ -20,7 +20,8 @@ m68kdeb_68030_pmmu_smoke_entry:
 	pflusha
 	movel	%d2,%d3
 	pmove	%a1@,%tc
-	jmp	1f:l
+	.word	0x4ef9
+	.long	0xdeadbeef
 1:
 	movel	%a1@(8),%d1
 	pmove	%a1@(4),%tc
