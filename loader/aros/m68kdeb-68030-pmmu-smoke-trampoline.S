@@ -1,10 +1,10 @@
 /*
- * M1.3b.4b.6b.51-PMMU: runtime-relocate exact Linux absolute-long jump.
+ * M1.3b.4b.6b.52-PMMU: isolate post-TC absolute-long jump decoding.
  *
- * 6b.50 exposed that an absolute-long jump cannot be copied as a raw blob without
- * relocating its embedded address. Emit the exact 4ef9 absolute-long opcode
- * with a sentinel operand; the qualifier patches that operand to the copied
- * runtime target before execution. This isolates the Linux jump encoding.
+ * 6b.51 passes on current FS-UAE and Amiberry but fails on FS-UAE 3.2.35
+ * after PMOVE TC. Precompute the identical fall-through target in a0 before
+ * enabling translation, then use register-indirect JMP after TC. PASS on
+ * 3.2.35 isolates its regression to the post-enable absolute-long JMP path.
  */
 
 	.text
@@ -19,9 +19,9 @@ m68kdeb_68030_pmmu_smoke_entry:
 	pmove	%a0@,%srp
 	pflusha
 	movel	%d2,%d3
+	lea	%pc@(1f),%a0
 	pmove	%a1@,%tc
-	.word	0x4ef9
-	.long	0xdeadbeef
+	jmp	%a0@
 1:
 	movel	%a1@(8),%d1
 	pmove	%a1@(4),%tc
