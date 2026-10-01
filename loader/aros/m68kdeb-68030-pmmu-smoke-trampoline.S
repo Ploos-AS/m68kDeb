@@ -1,10 +1,11 @@
 /*
- * M1.3b.4b.6b.54-PMMU: isolate absolute-long data addressing after TC.
+ * M1.3b.4b.6b.55-PMMU: isolate absolute-long JSR after TC.
  *
- * 6b.53 proves PC-relative effective-address calculation plus register-indirect
- * JMP is safe after PMOVE TC. Use an absolute-long memory read while
- * translation is active, but retain the known-good register-indirect control
- * transfer. The qualifier patches the sentinel to the embedded constant.
+ * 6b.54 proves absolute-long data addressing is safe while translation is
+ * active. Execute JSR abs.l to a same-page subroutine and return with RTS.
+ * The qualifier patches 0xdeadbeef to the instruction immediately following
+ * the 0xcafebabe target marker. FAIL isolates the issue to absolute-long
+ * control transfer generally; PASS narrows the regression to JMP abs.l.
  */
 
 	.text
@@ -20,7 +21,7 @@ m68kdeb_68030_pmmu_smoke_entry:
 	pflusha
 	movel	%d2,%d3
 	pmove	%a1@,%tc
-	movel	0xdeadbeef.l,%d1
+	jsr	0xdeadbeef.l
 	pmove	%a1@(4),%tc
 	pflusha
 	movel	%d3,%d2
@@ -35,8 +36,13 @@ m68kdeb_68030_pmmu_smoke_entry:
 m68kdeb_68030_pmmu_smoke_tc:
 	.long	0x82c07760
 	.long	0x00000000
-m68kdeb_68030_pmmu_smoke_value:
-	.long	0x13579bdf
+
+	.balign 4
+m68kdeb_68030_pmmu_smoke_target_marker:
+	.long	0xcafebabe
+m68kdeb_68030_pmmu_smoke_target:
+	movel	#0x13579bdf,%d1
+	rts
 
 	.balign 4
 m68kdeb_68030_pmmu_smoke_end:
