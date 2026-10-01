@@ -1,4 +1,4 @@
-/* M1.3b.4b.6b.54-PMMU absolute-long data-addressing control. */
+/* M1.3b.4b.6b.55-PMMU absolute-long control-transfer qualifier. */
 #include <dos/dos.h>
 #include <exec/memory.h>
 #include <exec/types.h>
@@ -38,22 +38,22 @@ static LONG marker(const char *path, const char *text)
     return n > 0 ? 0 : 20;
 }
 
-static LONG patch_abs_long_data(UBYTE *blob, ULONG len, ULONG base)
+static LONG patch_abs_long_target(UBYTE *blob, ULONG len, ULONG base)
 {
-    ULONG i, value_off = ~0UL, sentinel_off = ~0UL, target;
+    ULONG i, target_off = ~0UL, sentinel_off = ~0UL, target;
 
     for (i = 0; i + 4UL <= len; ++i) {
-        if (blob[i] == 0x13U && blob[i + 1UL] == 0x57U &&
-            blob[i + 2UL] == 0x9bU && blob[i + 3UL] == 0xdfU)
-            value_off = i;
+        if (blob[i] == 0xcaU && blob[i + 1UL] == 0xfeU &&
+            blob[i + 2UL] == 0xbaU && blob[i + 3UL] == 0xbeU)
+            target_off = i + 4UL;
         if (blob[i] == 0xdeU && blob[i + 1UL] == 0xadU &&
             blob[i + 2UL] == 0xbeU && blob[i + 3UL] == 0xefU)
             sentinel_off = i;
     }
-    if (value_off == ~0UL || sentinel_off == ~0UL)
+    if (target_off == ~0UL || sentinel_off == ~0UL)
         return 20;
 
-    target = base + value_off;
+    target = base + target_off;
     blob[sentinel_off] = (UBYTE)(target >> 24);
     blob[sentinel_off + 1UL] = (UBYTE)(target >> 16);
     blob[sentinel_off + 2UL] = (UBYTE)(target >> 8);
@@ -96,7 +96,7 @@ int main(void)
 
     CopyMem(m68kdeb_pmmu_smoke_blob, (APTR)tramp_page,
             (ULONG)m68kdeb_pmmu_smoke_blob_len);
-    if (patch_abs_long_data((UBYTE *)tramp_page,
+    if (patch_abs_long_target((UBYTE *)tramp_page,
                             (ULONG)m68kdeb_pmmu_smoke_blob_len,
                             tramp_page) != 0) {
         Printf("FAIL absolute-long data sentinel/value not found\n");
