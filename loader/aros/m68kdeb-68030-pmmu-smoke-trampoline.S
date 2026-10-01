@@ -1,10 +1,11 @@
 /*
- * M1.3b.4b.6b.56-PMMU: compare register-indirect JSR after TC.
+ * M1.3b.4b.6b.57-PMMU: isolate JSR from stack/RTS semantics after TC.
  *
- * 6b.55 fails on the FS-UAE paths with JSR abs.l while Amiberry passes.
- * Precompute the identical same-page subroutine target before PMOVE TC, then
- * call it through JSR (a0). PASS isolates the FS-UAE regression to absolute-
- * long control-transfer addressing rather than JSR/RTS or stack semantics.
+ * 6b.56 fails with register-indirect JSR, so absolute-long addressing is not
+ * required. Emulate the call explicitly while translation is active: push the
+ * return PC, JMP through the precomputed target, then return with RTS. If this
+ * also fails, the translated stack write/read or RTS path is implicated; if it
+ * passes, JSR itself is the trigger.
  */
 
 	.text
@@ -21,7 +22,9 @@ m68kdeb_68030_pmmu_smoke_entry:
 	movel	%d2,%d3
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_target),%a0
 	pmove	%a1@,%tc
-	jsr	%a0@
+	pea	%pc@(m68kdeb_68030_pmmu_smoke_return)
+	jmp	%a0@
+m68kdeb_68030_pmmu_smoke_return:
 	pmove	%a1@(4),%tc
 	pflusha
 	movel	%d3,%d2
