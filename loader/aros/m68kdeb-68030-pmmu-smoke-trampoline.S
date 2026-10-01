@@ -1,11 +1,10 @@
 /*
- * M1.3b.4b.6b.55-PMMU: isolate absolute-long JSR after TC.
+ * M1.3b.4b.6b.56-PMMU: compare register-indirect JSR after TC.
  *
- * 6b.54 proves absolute-long data addressing is safe while translation is
- * active. Execute JSR abs.l to a same-page subroutine and return with RTS.
- * The qualifier patches 0xdeadbeef to the instruction immediately following
- * the 0xcafebabe target marker. FAIL isolates the issue to absolute-long
- * control transfer generally; PASS narrows the regression to JMP abs.l.
+ * 6b.55 fails on the FS-UAE paths with JSR abs.l while Amiberry passes.
+ * Precompute the identical same-page subroutine target before PMOVE TC, then
+ * call it through JSR (a0). PASS isolates the FS-UAE regression to absolute-
+ * long control-transfer addressing rather than JSR/RTS or stack semantics.
  */
 
 	.text
@@ -20,8 +19,9 @@ m68kdeb_68030_pmmu_smoke_entry:
 	pmove	%a0@,%srp
 	pflusha
 	movel	%d2,%d3
+	lea	%pc@(m68kdeb_68030_pmmu_smoke_target),%a0
 	pmove	%a1@,%tc
-	jsr	0xdeadbeef.l
+	jsr	%a0@
 	pmove	%a1@(4),%tc
 	pflusha
 	movel	%d3,%d2
