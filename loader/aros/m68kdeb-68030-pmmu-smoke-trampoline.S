@@ -1,11 +1,10 @@
 /*
- * M1.3b.4b.6b.57-PMMU: isolate JSR from stack/RTS semantics after TC.
+ * M1.3b.4b.6b.58-PMMU: isolate translated stack access without RTS.
  *
- * 6b.56 fails with register-indirect JSR, so absolute-long addressing is not
- * required. Emulate the call explicitly while translation is active: push the
- * return PC, JMP through the precomputed target, then return with RTS. If this
- * also fails, the translated stack write/read or RTS path is implicated; if it
- * passes, JSR itself is the trigger.
+ * 6b.57 fails with an explicit PEA/JMP/RTS sequence, so JSR decoding is not
+ * required. Exercise only a balanced stack write/read while TC is active,
+ * without changing control flow. FAIL implicates translated stack memory
+ * access; PASS isolates the remaining failure to RTS/control-return semantics.
  */
 
 	.text
@@ -20,11 +19,9 @@ m68kdeb_68030_pmmu_smoke_entry:
 	pmove	%a0@,%srp
 	pflusha
 	movel	%d2,%d3
-	lea	%pc@(m68kdeb_68030_pmmu_smoke_target),%a0
 	pmove	%a1@,%tc
-	pea	%pc@(m68kdeb_68030_pmmu_smoke_return)
-	jmp	%a0@
-m68kdeb_68030_pmmu_smoke_return:
+	movel	#0x13579bdf,-(%sp)
+	movel	(%sp)+,%d1
 	pmove	%a1@(4),%tc
 	pflusha
 	movel	%d3,%d2
