@@ -1,10 +1,11 @@
 /*
- * M1.3b.4b.6b.58-PMMU: isolate translated stack access without RTS.
+ * M1.3b.4b.6b.59-PMMU: isolate translated stack write.
  *
- * 6b.57 fails with an explicit PEA/JMP/RTS sequence, so JSR decoding is not
- * required. Exercise only a balanced stack write/read while TC is active,
- * without changing control flow. FAIL implicates translated stack memory
- * access; PASS isolates the remaining failure to RTS/control-return semantics.
+ * 6b.58 fails with a balanced push/pop while TC is active, proving that JSR,
+ * JMP and RTS are not required. Perform only one predecrement stack write
+ * while translation is active. Disable TC before restoring SP and validate
+ * the stored value afterwards. FAIL implicates the translated stack write;
+ * PASS would isolate the 6b.58 failure to the translated stack read/pop.
  */
 
 	.text
@@ -21,9 +22,9 @@ m68kdeb_68030_pmmu_smoke_entry:
 	movel	%d2,%d3
 	pmove	%a1@,%tc
 	movel	#0x13579bdf,-(%sp)
-	movel	(%sp)+,%d1
 	pmove	%a1@(4),%tc
 	pflusha
+	movel	(%sp)+,%d1
 	movel	%d3,%d2
 	moveq	#0,%d0
 	cmpl	#0x13579bdf,%d1
@@ -36,13 +37,6 @@ m68kdeb_68030_pmmu_smoke_entry:
 m68kdeb_68030_pmmu_smoke_tc:
 	.long	0x82c07760
 	.long	0x00000000
-
-	.balign 4
-m68kdeb_68030_pmmu_smoke_target_marker:
-	.long	0xcafebabe
-m68kdeb_68030_pmmu_smoke_target:
-	movel	#0x13579bdf,%d1
-	rts
 
 	.balign 4
 m68kdeb_68030_pmmu_smoke_end:
