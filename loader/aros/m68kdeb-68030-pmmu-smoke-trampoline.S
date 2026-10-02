@@ -1,11 +1,11 @@
 /*
- * M1.3b.4b.6b.60-PMMU: compare ordinary translated data write.
+ * M1.3b.4b.6b.61-PMMU: compare identical data write before and during TC.
  *
- * 6b.59 fails when the only translated data operation is a predecrement stack
- * write. Write the same value to an ordinary same-page data location through
- * a precomputed address register while TC is active. PASS isolates the failure
- * to SP/predecrement stack access; FAIL means translated data writes generally
- * are affected.
+ * 6b.60 shows that an ordinary same-page data write fails while translation
+ * is active. Perform the identical address-register write once before PMMU
+ * enable and once after PMOVE TC. The first write controls for the target,
+ * instruction and memory itself; failure after the second isolates translated
+ * write handling.
  */
 
 	.text
@@ -21,8 +21,9 @@ m68kdeb_68030_pmmu_smoke_entry:
 	pflusha
 	movel	%d2,%d3
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_scratch),%a0
+	movel	#0x2468ace0,%a0@	/* control write with TC disabled */
 	pmove	%a1@,%tc
-	movel	#0x13579bdf,%a0@
+	movel	#0x13579bdf,%a0@	/* identical write with TC enabled */
 	pmove	%a1@(4),%tc
 	pflusha
 	movel	%a0@,%d1
