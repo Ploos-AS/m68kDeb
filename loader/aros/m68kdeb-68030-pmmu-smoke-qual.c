@@ -1,4 +1,4 @@
-/* M1.3b.4b.6b.70-PMMU isolate qualifier execution envelope. */
+/* M1.3b.4b.6b.71-PMMU isolate supervisor-state qualifier envelope. */
 #include <dos/dos.h>
 #include <exec/memory.h>
 #include <exec/types.h>
