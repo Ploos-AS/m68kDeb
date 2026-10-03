@@ -1,4 +1,4 @@
-/* M1.3b.4b.6b.55-PMMU absolute-long control-transfer qualifier. */
+/* M1.3b.4b.6b.68-PMMU restored historical FS-UAE/AROS Linux-style populated page-table SRP/TC qualification. */
 #include <dos/dos.h>
 #include <exec/memory.h>
 #include <exec/types.h>
@@ -38,36 +38,13 @@ static LONG marker(const char *path, const char *text)
     return n > 0 ? 0 : 20;
 }
 
-static LONG patch_abs_long_target(UBYTE *blob, ULONG len, ULONG base)
-{
-    ULONG i, target_off = ~0UL, sentinel_off = ~0UL, target;
-
-    for (i = 0; i + 4UL <= len; ++i) {
-        if (blob[i] == 0xcaU && blob[i + 1UL] == 0xfeU &&
-            blob[i + 2UL] == 0xbaU && blob[i + 3UL] == 0xbeU)
-            target_off = i + 4UL;
-        if (blob[i] == 0xdeU && blob[i + 1UL] == 0xadU &&
-            blob[i + 2UL] == 0xbeU && blob[i + 3UL] == 0xefU)
-            sentinel_off = i;
-    }
-    if (target_off == ~0UL || sentinel_off == ~0UL)
-        return 20;
-
-    target = base + target_off;
-    blob[sentinel_off] = (UBYTE)(target >> 24);
-    blob[sentinel_off + 1UL] = (UBYTE)(target >> 16);
-    blob[sentinel_off + 2UL] = (UBYTE)(target >> 8);
-    blob[sentinel_off + 3UL] = (UBYTE)target;
-    return 0;
-}
-
 int main(void)
 {
     UBYTE *table_raw = NULL, *tramp_raw = NULL;
     ULONG table_page, tramp_page;
     ULONG *root, *ptr, *pte;
     ULONG srp[2];
-    ULONG ri, pi, ti, alias_ri, alias_pi, alias_ti, alias_addr;
+    ULONG ri, pi, ti;
     UWORD *scratch;
     APTR old_user_sp;
     LONG rc = 20;
@@ -96,12 +73,6 @@ int main(void)
 
     CopyMem(m68kdeb_pmmu_smoke_blob, (APTR)tramp_page,
             (ULONG)m68kdeb_pmmu_smoke_blob_len);
-    if (patch_abs_long_target((UBYTE *)tramp_page,
-                            (ULONG)m68kdeb_pmmu_smoke_blob_len,
-                            tramp_page) != 0) {
-        Printf("FAIL absolute-long data sentinel/value not found\n");
-        goto out;
-    }
     *scratch = 0xffffU;
 
     /* TC is enabled briefly, so use the same real identity hierarchy as the
@@ -114,25 +85,15 @@ int main(void)
     root[ri] = ((ULONG)ptr & 0xffffff00UL) | TABLE_DESC;
     ptr[pi] = ((ULONG)pte & 0xffffff00UL) | TABLE_DESC;
     pte[ti] = (tramp_page & 0xfffff000UL) | PAGE_DESC;
-    /* 6b.23: reproduce the sparse Linux fetch-page pattern observed by 6b.15:
-     * only the executing page and its immediate successor are present while
-     * neighboring PTEs remain zero. Keep the exact Linux TC/SRP geometry. */
-    pte[ti] = (tramp_page & 0xfffff000UL) | PAGE_DESC;
-    pte[(ti + 1UL) & (PAGE_TABLE_SIZE - 1UL)] =
-        ((tramp_page + PAGE_SIZE) & 0xfffff000UL) | PAGE_DESC;
-
-    /* 6b.25 control: keep the 6b.24 trampoline and post-TC jump sequence,
-     * but make the jump target the exact identity virtual address. If this
-     * passes while 6b.24 fails, the regression boundary is specifically the
-     * change of virtual page, not the jump/trampoline sequence itself. */
-    alias_addr = tramp_page;
-    alias_ri = (alias_addr >> ROOT_INDEX_SHIFT) & (ROOT_TABLE_SIZE - 1UL);
-    alias_pi = (alias_addr >> PTR_INDEX_SHIFT) & (PTR_TABLE_SIZE - 1UL);
-    alias_ti = (alias_addr >> PAGE_INDEX_SHIFT) & (PAGE_TABLE_SIZE - 1UL);
-    if (alias_ri != ri || alias_pi != pi || alias_ti != ti) {
-        Printf("FAIL identity indices ri=%lu/%lu pi=%lu/%lu ti=%lu/%lu\\n",
-               ri, alias_ri, pi, alias_pi, ti, alias_ti);
-        goto out;
+    /* 6b.14: populate the complete 64-entry page table with an identity
+     * 256 KiB window. Linux's 68030 bootstrap enters TC with populated tables,
+     * not a synthetic one/two-page island. Keep the same descriptor geometry
+     * and exact TC while isolating this variable from the Linux boot itself. */
+    {
+        ULONG i;
+        ULONG window = tramp_page & ~((PAGE_TABLE_SIZE * PAGE_SIZE) - 1UL);
+        for (i = 0; i < PAGE_TABLE_SIZE; ++i)
+            pte[i] = (window + i * PAGE_SIZE) | PAGE_DESC;
     }
 
     srp[0] = 0x80000002UL;
@@ -145,13 +106,13 @@ int main(void)
            srp[0], srp[1], root[ri], ptr[pi], pte[ti],
            (ULONG)m68kdeb_pmmu_smoke_blob_len);
     marker("SYS:m1-3b4b6b-pmmu-armed.marker",
-           "68030 exact-address post-TC jump control armed\n");
+           "68030 Linux-style populated page-table control armed\n");
 
     /* Match the historical known-good PMMU qualifier envelope exactly: keep
      * task switching/interrupt delivery out of the active-translation window. */
     Disable();
     old_user_sp = SuperState();
-    rc = ((smoke_fn_t)tramp_page)(srp, alias_addr, scratch);
+    rc = ((smoke_fn_t)tramp_page)(srp, 0UL, scratch);
     if (old_user_sp) UserState(old_user_sp);
     Enable();
 
@@ -160,13 +121,13 @@ int main(void)
     /* The same-page constant is checked by the trampoline; scratch stays untouched. */
     if (rc == 0 && *scratch == 0xffffU) {
         marker("SYS:m1-3b4b6b-pmmu-returned.marker",
-               "68030 exact-address post-TC jump control returned\n");
+               "68030 Linux-style populated page-table control returned\n");
         marker("SYS:m1-3b4b6b-pmmu-pass.marker",
-               "68030 exact-address post-TC jump control passed\n");
+               "68030 Linux-style populated page-table control passed\n");
         Printf("M68KDEB_PMMU_SMOKE_PASS\n");
     } else {
         marker("SYS:m1-3b4b6b-pmmu-fail.marker",
-               "68030 exact-address post-TC jump control failed\n");
+               "68030 Linux-style populated page-table control failed\n");
         rc = 20;
     }
 
