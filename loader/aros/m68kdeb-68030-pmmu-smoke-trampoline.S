@@ -1,11 +1,10 @@
 /*
- * M1.3b.4b.6b.61-PMMU: compare identical data write before and during TC.
+ * M1.3b.4b.6b.62-PMMU: isolate translated byte write.
  *
- * 6b.60 shows that an ordinary same-page data write fails while translation
- * is active. Perform the identical address-register write once before PMMU
- * enable and once after PMOVE TC. The first write controls for the target,
- * instruction and memory itself; failure after the second isolates translated
- * write handling.
+ * 6b.61 proves the same address-register long write succeeds with TC disabled
+ * and fails with TC enabled. Reduce the active-translation operation to one
+ * byte write. FAIL means the regression applies to translated writes in
+ * general; PASS narrows it to wider write cycles.
  */
 
 	.text
@@ -21,15 +20,16 @@ m68kdeb_68030_pmmu_smoke_entry:
 	pflusha
 	movel	%d2,%d3
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_scratch),%a0
-	movel	#0x2468ace0,%a0@	/* control write with TC disabled */
+	clrb	%a0@
 	pmove	%a1@,%tc
-	movel	#0x13579bdf,%a0@	/* identical write with TC enabled */
+	moveb	#0x5a,%a0@
 	pmove	%a1@(4),%tc
 	pflusha
-	movel	%a0@,%d1
+	moveq	#0,%d1
+	moveb	%a0@,%d1
 	movel	%d3,%d2
 	moveq	#0,%d0
-	cmpl	#0x13579bdf,%d1
+	cmpb	#0x5a,%d1
 	beq	1f
 	moveq	#1,%d0
 1:
