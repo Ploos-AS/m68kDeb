@@ -1,10 +1,10 @@
 /*
- * M1.3b.4b.6b.67-PMMU: restore exact historical PASS trampoline.
+ * M1.3b.4b.6b.72-PMMU: re-test non-zero GPR in restored PASS envelope.
  *
- * 6b.65 and 6b.66 fail on the FS-UAE paths. Re-establish the exact instruction
- * sequence that previously passed before doing any further differential
- * testing. This separates trampoline semantics from changes elsewhere in the
- * current qualification environment.
+ * 6b.68/69 restored a stable PASS by restoring the historical qualifier
+ * envelope; 6b.70/71 were comment-only baseline confirmations. Change one
+ * runtime variable: force d2=1 immediately before PMOVE TC. FAIL would confirm
+ * that non-zero unrelated GPR state is sufficient inside the restored envelope.
  */
 
 	.text
@@ -18,6 +18,7 @@ m68kdeb_68030_pmmu_smoke_entry:
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 	pmove	%a0@,%srp
 	pflusha
+	moveq	#1,%d2
 	pmove	%a1@,%tc
 	movel	%a1@(8),%d1
 	pmove	%a1@(4),%tc
