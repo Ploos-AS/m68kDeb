@@ -1,11 +1,10 @@
 /*
- * M1.3b.4b.6b.73-PMMU: establish non-zero GPR only after TC enable.
+ * M1.3b.4b.6b.74-PMMU: clear transient non-zero GPR before translated read.
  *
- * 6b.72 fails in the restored historical PASS envelope when d2=1 is set
- * immediately before PMOVE TC. Move that sole state change to immediately
- * after PMOVE TC, retaining the same translated same-page data read. FAIL
- * means unrelated non-zero GPR state during active translation is sufficient;
- * PASS isolates the trigger to state present at the TC-enable transition.
+ * 6b.73 fails when d2=1 is established after PMOVE TC and remains non-zero
+ * for the translated same-page data read. Clear d2 again before that read.
+ * PASS means the GPR value must be non-zero when translated data is accessed;
+ * FAIL means even a transient non-zero GPR while TC is active is sufficient.
  */
 
 	.text
@@ -21,6 +20,7 @@ m68kdeb_68030_pmmu_smoke_entry:
 	pflusha
 	pmove	%a1@,%tc
 	moveq	#1,%d2
+	moveq	#0,%d2
 	movel	%a1@(8),%d1
 	pmove	%a1@(4),%tc
 	pflusha
