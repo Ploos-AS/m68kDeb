@@ -1,10 +1,11 @@
 /*
- * M1.3b.4b.6b.74-PMMU: clear transient non-zero GPR before translated read.
+ * M1.3b.4b.6b.75-PMMU: isolate transient non-zero GPR with no translated data access.
  *
- * 6b.73 fails when d2=1 is established after PMOVE TC and remains non-zero
- * for the translated same-page data read. Clear d2 again before that read.
- * PASS means the GPR value must be non-zero when translated data is accessed;
- * FAIL means even a transient non-zero GPR while TC is active is sufficient.
+ * 6b.74 clears d2 again before a translated same-page data read. Remove that
+ * read entirely: enable TC, make d2 transiently non-zero, clear it, then
+ * disable TC immediately. FAIL means transient unrelated GPR state alone is
+ * sufficient while translation is active; PASS requires a subsequent
+ * translated data access (or another operation) to expose the failure.
  */
 
 	.text
@@ -21,14 +22,9 @@ m68kdeb_68030_pmmu_smoke_entry:
 	pmove	%a1@,%tc
 	moveq	#1,%d2
 	moveq	#0,%d2
-	movel	%a1@(8),%d1
 	pmove	%a1@(4),%tc
 	pflusha
 	moveq	#0,%d0
-	cmpl	#0x13579bdf,%d1
-	beq	1f
-	moveq	#1,%d0
-1:
 	rts
 
 	.balign 4
