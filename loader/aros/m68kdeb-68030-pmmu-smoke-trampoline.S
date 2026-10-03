@@ -1,10 +1,11 @@
 /*
- * M1.3b.4b.6b.72-PMMU: re-test non-zero GPR in restored PASS envelope.
+ * M1.3b.4b.6b.73-PMMU: establish non-zero GPR only after TC enable.
  *
- * 6b.68/69 restored a stable PASS by restoring the historical qualifier
- * envelope; 6b.70/71 were comment-only baseline confirmations. Change one
- * runtime variable: force d2=1 immediately before PMOVE TC. FAIL would confirm
- * that non-zero unrelated GPR state is sufficient inside the restored envelope.
+ * 6b.72 fails in the restored historical PASS envelope when d2=1 is set
+ * immediately before PMOVE TC. Move that sole state change to immediately
+ * after PMOVE TC, retaining the same translated same-page data read. FAIL
+ * means unrelated non-zero GPR state during active translation is sufficient;
+ * PASS isolates the trigger to state present at the TC-enable transition.
  */
 
 	.text
@@ -18,8 +19,8 @@ m68kdeb_68030_pmmu_smoke_entry:
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 	pmove	%a0@,%srp
 	pflusha
-	moveq	#1,%d2
 	pmove	%a1@,%tc
+	moveq	#1,%d2
 	movel	%a1@(8),%d1
 	pmove	%a1@(4),%tc
 	pflusha
