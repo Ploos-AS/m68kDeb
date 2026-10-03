@@ -1,11 +1,11 @@
 /*
- * M1.3b.4b.6b.75-PMMU: isolate transient non-zero GPR with no translated data access.
+ * M1.3b.4b.6b.76-PMMU: control register writes at zero while TC is active.
  *
- * 6b.74 clears d2 again before a translated same-page data read. Remove that
- * read entirely: enable TC, make d2 transiently non-zero, clear it, then
- * disable TC immediately. FAIL means transient unrelated GPR state alone is
- * sufficient while translation is active; PASS requires a subsequent
- * translated data access (or another operation) to expose the failure.
+ * 6b.75 fails with d2 changing 0 -> 1 -> 0 while TC is active, without any
+ * explicit translated data access. Keep the same two register-writing
+ * instructions and active-TC lifetime, but write zero both times. PASS means
+ * the transient non-zero value is required; FAIL means register-write activity
+ * itself is sufficient in this execution envelope.
  */
 
 	.text
@@ -20,7 +20,7 @@ m68kdeb_68030_pmmu_smoke_entry:
 	pmove	%a0@,%srp
 	pflusha
 	pmove	%a1@,%tc
-	moveq	#1,%d2
+	moveq	#0,%d2
 	moveq	#0,%d2
 	pmove	%a1@(4),%tc
 	pflusha
