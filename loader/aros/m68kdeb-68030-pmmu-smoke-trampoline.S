@@ -1,12 +1,10 @@
 /*
- * M1.3b.4b.6b.66-PMMU: restore the known-good post-TC long read.
+ * M1.3b.4b.6b.67-PMMU: restore exact historical PASS trampoline.
  *
- * 6b.65 shows that an immediate TC enable/disable sequence fails on the UAE
- * runtime paths. The historical PASS baseline performed one long read through
- * a1 between those PMOVE operations. Restore only that access and its embedded
- * constant. PASS means the post-enable access/pipeline sequence is required
- * for a clean disable; FAIL means another difference from the old baseline
- * remains relevant.
+ * 6b.65 and 6b.66 fail on the FS-UAE paths. Re-establish the exact instruction
+ * sequence that previously passed before doing any further differential
+ * testing. This separates trampoline semantics from changes elsewhere in the
+ * current qualification environment.
  */
 
 	.text
@@ -33,6 +31,7 @@ m68kdeb_68030_pmmu_smoke_entry:
 
 	.balign 4
 m68kdeb_68030_pmmu_smoke_tc:
+	/* E=1, SRE=1, FCL=0, PS=12, TIA=7, TIB=7, TIC=6. */
 	.long	0x82c07760
 	.long	0x00000000
 	.long	0x13579bdf
