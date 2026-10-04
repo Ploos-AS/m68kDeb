@@ -1,11 +1,11 @@
 /*
- * M1.3b.4b.6b.87-PMMU: distinguish two translated instructions from NOP pair.
+ * M1.3b.4b.6b.88-PMMU: reverse the neutral translated instruction pair.
  *
- * 6b.85 fails only in the generic smoke runtime with two translated NOPs,
- * while 6b.86 passes when the second NOP is skipped. Execute two translated
- * instructions again, but make the second a register self-move that preserves
- * d2 and CCR. FAIL points to instruction-count/duration; PASS points to the
- * consecutive-NOP/fetch pattern.
+ * 6b.87 passes the full matrix with NOP followed by MOVE.L d2,d2, while 6b.85
+ * exposed a generic-smoke-only failure with NOP+NOP. Reverse the 6b.87 pair
+ * without changing the two-instruction translated window or d2/CCR semantics.
+ * PASS narrows 6b.85 toward the consecutive-NOP opcode/fetch pattern; FAIL
+ * points specifically at a NOP occupying the second translated slot.
  */
 
 	.text
@@ -22,8 +22,8 @@ m68kdeb_68030_pmmu_smoke_entry:
 	movel	%d2,%d3
 	moveq	#0,%d2
 	pmove	%a1@,%tc
-	nop
 	movel	%d2,%d2
+	nop
 	movel	%d3,%d2
 	pmove	%a1@(4),%tc
 	pflusha
