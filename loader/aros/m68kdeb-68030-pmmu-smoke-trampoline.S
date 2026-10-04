@@ -1,11 +1,11 @@
 /*
- * M1.3b.4b.6b.86-PMMU: separate translated instruction count from layout.
+ * M1.3b.4b.6b.87-PMMU: distinguish two translated instructions from NOP pair.
  *
- * 6b.85 passes on FS-UAE, FS-UAE 3.2.35, and Amiberry but fails in the
- * generic smoke runtime with two translated NOPs. Preserve the two-NOP code
- * footprint while branching over the second NOP. This keeps the later
- * instructions displaced while executing only one NOP before restoring d2.
- * PASS points to executed-instruction count; FAIL points to layout/fetch.
+ * 6b.85 fails only in the generic smoke runtime with two translated NOPs,
+ * while 6b.86 passes when the second NOP is skipped. Execute two translated
+ * instructions again, but make the second a register self-move that preserves
+ * d2 and CCR. FAIL points to instruction-count/duration; PASS points to the
+ * consecutive-NOP/fetch pattern.
  */
 
 	.text
@@ -23,9 +23,7 @@ m68kdeb_68030_pmmu_smoke_entry:
 	moveq	#0,%d2
 	pmove	%a1@,%tc
 	nop
-	bra.s	1f
-	nop
-1:
+	movel	%d2,%d2
 	movel	%d3,%d2
 	pmove	%a1@(4),%tc
 	pflusha
