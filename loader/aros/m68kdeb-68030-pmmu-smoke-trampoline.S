@@ -1,11 +1,10 @@
 /*
- * M1.3b.4b.6b.83-PMMU: isolate d2 value at the TC-enable boundary.
+ * M1.3b.4b.6b.84-PMMU: isolate one translated instruction with changed d2.
  *
- * 6b.81 passes when d2 is restored before PMOVE TC, while 6b.78 fails when
- * d2 remains zero across enable. Save d2, force zero for PMOVE TC, then restore
- * it immediately after enable before the control NOP. FAIL means the d2 value
- * at TC enable itself is sufficient; PASS means d2 must remain changed while
- * translated execution continues.
+ * 6b.83 passes when d2 is restored immediately after PMOVE TC. Keep d2 zero
+ * for exactly one translated NOP, then restore it before disabling TC. FAIL
+ * means one translated instruction with changed d2 is sufficient; PASS means
+ * the changed value must survive longer or overlap a specific operation.
  */
 
 	.text
@@ -22,8 +21,8 @@ m68kdeb_68030_pmmu_smoke_entry:
 	movel	%d2,%d3
 	moveq	#0,%d2
 	pmove	%a1@,%tc
-	movel	%d3,%d2
 	nop
+	movel	%d3,%d2
 	pmove	%a1@(4),%tc
 	pflusha
 	moveq	#0,%d0
