@@ -1,10 +1,11 @@
 /*
- * M1.3b.4b.6b.85-PMMU: extend changed-d2 translated window.
+ * M1.3b.4b.6b.86-PMMU: separate translated instruction count from layout.
  *
- * 6b.84 passes with d2 held at zero across exactly one translated NOP. Keep
- * the same restored qualifier envelope and extend only that active-translation
- * window to two NOPs before restoring d2. FAIL locates a duration/instruction-
- * count boundary; PASS lets the next probe introduce one Linux-like operation.
+ * 6b.85 passes on FS-UAE, FS-UAE 3.2.35, and Amiberry but fails in the
+ * generic smoke runtime with two translated NOPs. Preserve the two-NOP code
+ * footprint while branching over the second NOP. This keeps the later
+ * instructions displaced while executing only one NOP before restoring d2.
+ * PASS points to executed-instruction count; FAIL points to layout/fetch.
  */
 
 	.text
@@ -22,7 +23,9 @@ m68kdeb_68030_pmmu_smoke_entry:
 	moveq	#0,%d2
 	pmove	%a1@,%tc
 	nop
+	bra.s	1f
 	nop
+1:
 	movel	%d3,%d2
 	pmove	%a1@(4),%tc
 	pflusha
