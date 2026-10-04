@@ -1,11 +1,12 @@
 /*
- * M1.3b.4b.6b.88-PMMU: reverse the neutral translated instruction pair.
+ * M1.3b.4b.6b.89-PMMU: exercise Linux-like post-TC long-jump control flow.
  *
- * 6b.87 passes the full matrix with NOP followed by MOVE.L d2,d2, while 6b.85
- * exposed a generic-smoke-only failure with NOP+NOP. Reverse the 6b.87 pair
- * without changing the two-instruction translated window or d2/CCR semantics.
- * PASS narrows 6b.85 toward the consecutive-NOP opcode/fetch pattern; FAIL
- * points specifically at a NOP occupying the second translated slot.
+ * 6b.87 and 6b.88 show that the isolated 6b.85 NOP+NOP failure is not a
+ * general translated-instruction-count or register-state limit. Return to the
+ * Linux 68030 head.S boundary: after enabling TC, transfer control with a
+ * long jump to a nearby translated label before restoring d2 and disabling TC.
+ * This tests the control-flow shape that the real kernel uses immediately
+ * after PMOVE TC while preserving the restored qualifier envelope.
  */
 
 	.text
@@ -22,8 +23,8 @@ m68kdeb_68030_pmmu_smoke_entry:
 	movel	%d2,%d3
 	moveq	#0,%d2
 	pmove	%a1@,%tc
-	movel	%d2,%d2
-	nop
+	jmp	1f
+1:
 	movel	%d3,%d2
 	pmove	%a1@(4),%tc
 	pflusha
