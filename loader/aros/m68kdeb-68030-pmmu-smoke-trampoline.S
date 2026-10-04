@@ -1,11 +1,10 @@
 /*
- * M1.3b.4b.6b.78-PMMU: control one zero GPR write before TC.
+ * M1.3b.4b.6b.79-PMMU: control pre-TC instruction layout with NOP.
  *
- * 6b.77 fails when a single moveq #0,d2 executes while translation is active.
- * Move the identical instruction immediately before PMOVE TC and keep the
- * active-TC window otherwise empty. PASS isolates the emulator regression to
- * executing the ordinary GPR write while TC is enabled; FAIL means the write
- * also perturbs the subsequent PMMU enable transition.
+ * 6b.78 fails when moveq #0,d2 is placed immediately before PMOVE TC.
+ * Replace only that two-byte instruction with a two-byte NOP, preserving the
+ * PMOVE TC and active-window offsets. PASS means register-write/state is the
+ * trigger; FAIL means the added instruction/layout itself is sufficient.
  */
 
 	.text
@@ -19,7 +18,7 @@ m68kdeb_68030_pmmu_smoke_entry:
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 	pmove	%a0@,%srp
 	pflusha
-	moveq	#0,%d2
+	nop
 	pmove	%a1@,%tc
 	nop
 	pmove	%a1@(4),%tc
