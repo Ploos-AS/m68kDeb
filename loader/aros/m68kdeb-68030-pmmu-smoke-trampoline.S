@@ -1,10 +1,10 @@
 /*
- * M1.3b.4b.6b.80-PMMU: isolate CCR change from GPR change before TC.
+ * M1.3b.4b.6b.81-PMMU: isolate transient GPR mutation before TC.
  *
- * 6b.78 fails with two-byte moveq #0,d2 immediately before PMOVE TC, while
- * 6b.79 passes with a two-byte NOP at the identical location. Replace NOP
- * with cmp.l d2,d2: this sets Z and clears N/V/C like moveq #0 without
- * changing d2. PASS isolates the failure to GPR mutation rather than CCR.
+ * 6b.80 passes when only CCR changes, while 6b.78 fails when d2 is replaced
+ * with zero. Save d2 in d3, mutate d2, then restore the exact entry value
+ * before PMOVE TC. PASS means the value present at TC enable matters; FAIL
+ * means pre-enable GPR mutation/history itself is sufficient.
  */
 
 	.text
@@ -18,7 +18,9 @@ m68kdeb_68030_pmmu_smoke_entry:
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 	pmove	%a0@,%srp
 	pflusha
-	cmpl	%d2,%d2
+	movel	%d2,%d3
+	moveq	#0,%d2
+	movel	%d3,%d2
 	pmove	%a1@,%tc
 	nop
 	pmove	%a1@(4),%tc
