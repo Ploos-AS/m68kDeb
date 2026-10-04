@@ -1,10 +1,11 @@
 /*
- * M1.3b.4b.6b.82-PMMU: isolate which GPR value matters at TC enable.
+ * M1.3b.4b.6b.83-PMMU: isolate d2 value at the TC-enable boundary.
  *
- * 6b.81 passes when d2 is transiently cleared and restored before PMOVE TC,
- * while 6b.78 fails when d2 remains zero. Keep d2 untouched and force d3=0
- * immediately before TC. This tests whether the failure follows any changed
- * GPR value at enable or is specific to d2.
+ * 6b.81 passes when d2 is restored before PMOVE TC, while 6b.78 fails when
+ * d2 remains zero across enable. Save d2, force zero for PMOVE TC, then restore
+ * it immediately after enable before the control NOP. FAIL means the d2 value
+ * at TC enable itself is sufficient; PASS means d2 must remain changed while
+ * translated execution continues.
  */
 
 	.text
@@ -18,8 +19,10 @@ m68kdeb_68030_pmmu_smoke_entry:
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 	pmove	%a0@,%srp
 	pflusha
-	moveq	#0,%d3
+	movel	%d2,%d3
+	moveq	#0,%d2
 	pmove	%a1@,%tc
+	movel	%d3,%d2
 	nop
 	pmove	%a1@(4),%tc
 	pflusha
