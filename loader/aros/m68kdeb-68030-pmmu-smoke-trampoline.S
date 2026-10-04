@@ -1,10 +1,10 @@
 /*
- * M1.3b.4b.6b.81-PMMU: isolate transient GPR mutation before TC.
+ * M1.3b.4b.6b.82-PMMU: isolate which GPR value matters at TC enable.
  *
- * 6b.80 passes when only CCR changes, while 6b.78 fails when d2 is replaced
- * with zero. Save d2 in d3, mutate d2, then restore the exact entry value
- * before PMOVE TC. PASS means the value present at TC enable matters; FAIL
- * means pre-enable GPR mutation/history itself is sufficient.
+ * 6b.81 passes when d2 is transiently cleared and restored before PMOVE TC,
+ * while 6b.78 fails when d2 remains zero. Keep d2 untouched and force d3=0
+ * immediately before TC. This tests whether the failure follows any changed
+ * GPR value at enable or is specific to d2.
  */
 
 	.text
@@ -18,9 +18,7 @@ m68kdeb_68030_pmmu_smoke_entry:
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 	pmove	%a0@,%srp
 	pflusha
-	movel	%d2,%d3
-	moveq	#0,%d2
-	movel	%d3,%d2
+	moveq	#0,%d3
 	pmove	%a1@,%tc
 	nop
 	pmove	%a1@(4),%tc
