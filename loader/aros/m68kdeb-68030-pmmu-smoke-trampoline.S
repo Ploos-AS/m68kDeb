@@ -1,11 +1,11 @@
 /*
- * M1.3b.4b.6b.77-PMMU: isolate one zero GPR write while TC is active.
+ * M1.3b.4b.6b.78-PMMU: control one zero GPR write before TC.
  *
- * 6b.76 fails with two moveq #0,d2 instructions under active translation,
- * while the restored historical baseline passes with one same-page data read.
- * Reduce the delta to exactly one zero-valued GPR write. FAIL means a single
- * unrelated GPR write is sufficient in this envelope; PASS means the repeated
- * write/sequence length in 6b.76 is material.
+ * 6b.77 fails when a single moveq #0,d2 executes while translation is active.
+ * Move the identical instruction immediately before PMOVE TC and keep the
+ * active-TC window otherwise empty. PASS isolates the emulator regression to
+ * executing the ordinary GPR write while TC is enabled; FAIL means the write
+ * also perturbs the subsequent PMMU enable transition.
  */
 
 	.text
@@ -19,8 +19,9 @@ m68kdeb_68030_pmmu_smoke_entry:
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 	pmove	%a0@,%srp
 	pflusha
-	pmove	%a1@,%tc
 	moveq	#0,%d2
+	pmove	%a1@,%tc
+	nop
 	pmove	%a1@(4),%tc
 	pflusha
 	moveq	#0,%d0
