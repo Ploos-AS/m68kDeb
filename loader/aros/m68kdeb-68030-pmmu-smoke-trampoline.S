@@ -1,10 +1,10 @@
 /*
- * M1.3b.4b.6b.79-PMMU: control pre-TC instruction layout with NOP.
+ * M1.3b.4b.6b.80-PMMU: isolate CCR change from GPR change before TC.
  *
- * 6b.78 fails when moveq #0,d2 is placed immediately before PMOVE TC.
- * Replace only that two-byte instruction with a two-byte NOP, preserving the
- * PMOVE TC and active-window offsets. PASS means register-write/state is the
- * trigger; FAIL means the added instruction/layout itself is sufficient.
+ * 6b.78 fails with two-byte moveq #0,d2 immediately before PMOVE TC, while
+ * 6b.79 passes with a two-byte NOP at the identical location. Replace NOP
+ * with cmp.l d2,d2: this sets Z and clears N/V/C like moveq #0 without
+ * changing d2. PASS isolates the failure to GPR mutation rather than CCR.
  */
 
 	.text
@@ -18,7 +18,7 @@ m68kdeb_68030_pmmu_smoke_entry:
 	lea	%pc@(m68kdeb_68030_pmmu_smoke_tc),%a1
 	pmove	%a0@,%srp
 	pflusha
-	nop
+	cmpl	%d2,%d2
 	pmove	%a1@,%tc
 	nop
 	pmove	%a1@(4),%tc
