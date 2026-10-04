@@ -1,11 +1,11 @@
 /*
- * M1.3b.4b.6b.76-PMMU: control register writes at zero while TC is active.
+ * M1.3b.4b.6b.77-PMMU: isolate one zero GPR write while TC is active.
  *
- * 6b.75 fails with d2 changing 0 -> 1 -> 0 while TC is active, without any
- * explicit translated data access. Keep the same two register-writing
- * instructions and active-TC lifetime, but write zero both times. PASS means
- * the transient non-zero value is required; FAIL means register-write activity
- * itself is sufficient in this execution envelope.
+ * 6b.76 fails with two moveq #0,d2 instructions under active translation,
+ * while the restored historical baseline passes with one same-page data read.
+ * Reduce the delta to exactly one zero-valued GPR write. FAIL means a single
+ * unrelated GPR write is sufficient in this envelope; PASS means the repeated
+ * write/sequence length in 6b.76 is material.
  */
 
 	.text
@@ -20,7 +20,6 @@ m68kdeb_68030_pmmu_smoke_entry:
 	pmove	%a0@,%srp
 	pflusha
 	pmove	%a1@,%tc
-	moveq	#0,%d2
 	moveq	#0,%d2
 	pmove	%a1@(4),%tc
 	pflusha
