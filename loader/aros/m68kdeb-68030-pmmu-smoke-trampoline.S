@@ -1,14 +1,13 @@
 /*
- * M1.3b.4b.6b.93-PMMU: read active SRP and write the exact value back.
+ * M1.3b.4b.6b.94-PMMU: compare SRP operand addresses under active TC.
  *
- * 6b.91 fails the real runtimes when SRP is written after TC is enabled.
- * 6b.92 replaces that write with an SRP read and passes current FS-UAE,
- * generic smoke, and Amiberry (FS-UAE 3.2.35 retains a separate read-path
- * failure). Read the active SRP into writable storage, then immediately PMOVE
- * that exact image back into SRP while translation remains active.
- *
- * If current runtimes fail again, the write operation itself is implicated
- * even when the SRP value and page-table root are unchanged.
+ * 6b.91 fails when the post-TC SRP image is loaded directly from the external
+ * qualifier pointer in a0. 6b.93 passes the full matrix when the active SRP is
+ * first read into local translated storage and that identical image is written
+ * back. Preserve the proven read/write-back, then perform a second SRP write
+ * from the original a0 operand. Both images should describe the same known-good
+ * root. A failure therefore points at the operand/data-address path rather than
+ * the SRP value or SRP writes in general.
  */
 
 	.text
@@ -29,6 +28,7 @@ m68kdeb_68030_pmmu_smoke_entry:
 1:
 	pmove	%srp,%a1@(12)
 	pmove	%a1@(12),%srp
+	pmove	%a0@,%srp
 	movel	%d3,%d2
 	pmove	%a1@(4),%tc
 	pflusha
