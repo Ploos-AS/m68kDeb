@@ -43,7 +43,7 @@ int main(void)
     UBYTE *table_raw = NULL, *tramp_raw = NULL;
     ULONG table_page, tramp_page;
     ULONG *root, *ptr, *pte;
-    ULONG srp[2];
+    ULONG *srp;
     ULONG ri, pi, ti;
     UWORD *scratch;
     APTR old_user_sp;
@@ -70,15 +70,19 @@ int main(void)
     root = (ULONG *)table_page;
     ptr = (ULONG *)(table_page + 512UL);
     pte = (ULONG *)(table_page + 1024UL);
+    /* 6b.100: keep the SRP operand in the already mapped successor page.
+     * Earlier probes passed &srp from the C stack, which is outside this
+     * sparse identity hierarchy while TC is active. */
+    srp = (ULONG *)(tramp_page + PAGE_SIZE);
 
     CopyMem(m68kdeb_pmmu_smoke_blob, (APTR)tramp_page,
             (ULONG)m68kdeb_pmmu_smoke_blob_len);
     *scratch = 0xffffU;
 
     /* TC is enabled briefly, so use the same real identity hierarchy as the
-     * known-good PMMU control baseline. The trampoline itself performs no
-     * PTESTR, alias access, or TT0 load. The trampoline performs one same-page data read through the identity mapping
-     * while TC is active; the scratch sentinel remains untouched. */
+     * known-good PMMU control baseline. 6b.100 places the SRP operand at the
+     * start of the mapped successor page so post-TC PMOVE/data accesses do not
+     * depend on the unmapped C stack. */
     ri = (tramp_page >> ROOT_INDEX_SHIFT) & (ROOT_TABLE_SIZE - 1UL);
     pi = (tramp_page >> PTR_INDEX_SHIFT) & (PTR_TABLE_SIZE - 1UL);
     ti = (tramp_page >> PAGE_INDEX_SHIFT) & (PAGE_TABLE_SIZE - 1UL);
