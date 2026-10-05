@@ -1,11 +1,14 @@
 /*
- * M1.3b.4b.6b.92-PMMU: read SRP after TC instead of writing it.
+ * M1.3b.4b.6b.93-PMMU: read active SRP and write the exact value back.
  *
- * 6b.89 passes the full matrix after PMOVE TC and a translated long jump.
- * 6b.91 fails the real runtimes when the next PMMU operation writes SRP, even
- * without PFLUSHA. Replace that write with an SRP readback to writable storage.
- * PASS isolates the failure to post-TC SRP writes; FAIL points more broadly at
- * SRP/PMMU access or the translated data access performed by PMOVE.
+ * 6b.91 fails the real runtimes when SRP is written after TC is enabled.
+ * 6b.92 replaces that write with an SRP read and passes current FS-UAE,
+ * generic smoke, and Amiberry (FS-UAE 3.2.35 retains a separate read-path
+ * failure). Read the active SRP into writable storage, then immediately PMOVE
+ * that exact image back into SRP while translation remains active.
+ *
+ * If current runtimes fail again, the write operation itself is implicated
+ * even when the SRP value and page-table root are unchanged.
  */
 
 	.text
@@ -25,6 +28,7 @@ m68kdeb_68030_pmmu_smoke_entry:
 	jmp	1f
 1:
 	pmove	%srp,%a1@(12)
+	pmove	%a1@(12),%srp
 	movel	%d3,%d2
 	pmove	%a1@(4),%tc
 	pflusha
