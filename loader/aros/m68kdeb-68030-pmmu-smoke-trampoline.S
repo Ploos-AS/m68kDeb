@@ -1,12 +1,15 @@
 /*
- * M1.3b.4b.6b.89-PMMU: exercise Linux-like post-TC long-jump control flow.
+ * M1.3b.4b.6b.90-PMMU: Linux-like post-TC jump with immediate SRP switch.
  *
- * 6b.87 and 6b.88 show that the isolated 6b.85 NOP+NOP failure is not a
- * general translated-instruction-count or register-state limit. Return to the
- * Linux 68030 head.S boundary: after enabling TC, transfer control with a
- * long jump to a nearby translated label before restoring d2 and disabling TC.
- * This tests the control-flow shape that the real kernel uses immediately
- * after PMOVE TC while preserving the restored qualifier envelope.
+ * 6b.89 proves PMOVE TC followed by a translated long jump works across the
+ * full qualifier matrix. Linux m68k head.S then switches from the bootstrap
+ * root pointer to its final SRP after the post-enable jump. Add that exact
+ * class of PMMU operation here: jump under translation, PMOVE a second valid
+ * root pointer into SRP, flush ATC, then restore the qualifier state.
+ *
+ * The second SRP image intentionally names the same known-good root as the
+ * bootstrap SRP. This isolates the act/timing of the post-TC SRP switch from
+ * any page-table topology change.
  */
 
 	.text
@@ -25,6 +28,8 @@ m68kdeb_68030_pmmu_smoke_entry:
 	pmove	%a1@,%tc
 	jmp	1f
 1:
+	pmove	%a0@,%srp
+	pflusha
 	movel	%d3,%d2
 	pmove	%a1@(4),%tc
 	pflusha
