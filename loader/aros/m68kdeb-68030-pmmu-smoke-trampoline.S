@@ -1,14 +1,13 @@
 /*
- * M1.3b.4b.6b.95-PMMU: ordinary read through external a0 under active TC.
+ * M1.3b.4b.6b.96-PMMU: hold the external a0 address without dereferencing it.
  *
- * 6b.93 passes when active SRP is read to local storage and written back.
- * 6b.94 fails current FS-UAE, FS-UAE 3.2.35, and generic smoke after adding a
- * post-TC PMOVE from the original external a0 operand. Replace only that PMOVE
- * with an ordinary longword read through the same a0 address.
+ * 6b.95 reproduces the runtime split with an ordinary longword read through
+ * the original external a0 pointer while TC is active. Remove only the memory
+ * access and copy the pointer value itself through d2 at the same point.
  *
- * PASS says the translated a0 data path itself works and implicates PMOVE's
- * memory operand semantics. FAIL says the external a0 address/data translation
- * is already sufficient to reproduce the problem.
+ * PASS isolates the failure to translated data access through a0. FAIL would
+ * show that merely carrying/using the external address value across TC is
+ * sufficient in the affected runtimes.
  */
 
 	.text
@@ -29,7 +28,7 @@ m68kdeb_68030_pmmu_smoke_entry:
 1:
 	pmove	%srp,%a1@(12)
 	pmove	%a1@(12),%srp
-	movel	%a0@,%d2
+	movel	%a0,%d2
 	movel	%d3,%d2
 	pmove	%a1@(4),%tc
 	pflusha
