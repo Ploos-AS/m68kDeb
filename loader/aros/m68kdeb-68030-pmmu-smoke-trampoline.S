@@ -1,15 +1,14 @@
 /*
- * M1.3b.4b.6b.90-PMMU: Linux-like post-TC jump with immediate SRP switch.
+ * M1.3b.4b.6b.91-PMMU: isolate post-TC SRP write from ATC flush.
  *
- * 6b.89 proves PMOVE TC followed by a translated long jump works across the
- * full qualifier matrix. Linux m68k head.S then switches from the bootstrap
- * root pointer to its final SRP after the post-enable jump. Add that exact
- * class of PMMU operation here: jump under translation, PMOVE a second valid
- * root pointer into SRP, flush ATC, then restore the qualifier state.
+ * 6b.89 passes the full matrix with PMOVE TC followed by a translated long
+ * jump. 6b.90 adds PMOVE SRP plus PFLUSHA after that jump and fails FS-UAE,
+ * FS-UAE 3.2.35, and the generic smoke runtime. Keep the post-TC SRP write
+ * but remove only the following PFLUSHA. PASS implicates the flush; FAIL
+ * implicates the SRP write itself or the translated state immediately after it.
  *
- * The second SRP image intentionally names the same known-good root as the
- * bootstrap SRP. This isolates the act/timing of the post-TC SRP switch from
- * any page-table topology change.
+ * The post-TC SRP write reloads the same known-good root pointer, so no page
+ * table topology change is introduced by this probe.
  */
 
 	.text
@@ -29,7 +28,6 @@ m68kdeb_68030_pmmu_smoke_entry:
 	jmp	1f
 1:
 	pmove	%a0@,%srp
-	pflusha
 	movel	%d3,%d2
 	pmove	%a1@(4),%tc
 	pflusha
