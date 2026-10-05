@@ -1,7 +1,7 @@
 /*
- * M1.3b.4b.6b.98-PMMU: read external a0 through the 0x40000000 alias.
+ * M1.3b.4b.6b.99-PMMU: read external a0 through the 0x40000000 alias.
  *
- * 6b.95 fails on a direct post-TC read through the original external a0
+ * 6b.98 did not assemble because OR-immediate cannot target an address register. 6b.95 fails on a direct post-TC read through the original external a0
  * address, while 6b.97 passes when the same data is copied locally before TC
  * and read PC-relative afterwards. Linux's 68030 setup provides the Zorro III
  * 0x40000000 transparent-translation window. Form that alias for the external
@@ -32,8 +32,9 @@ m68kdeb_68030_pmmu_smoke_entry:
 1:
 	pmove	%srp,%a1@(12)
 	pmove	%a1@(12),%srp
-	movel	%a0,%a2
-	orl	#0x40000000,%a2
+	movel	%a0,%d2
+	orl	#0x40000000,%d2
+	movel	%d2,%a2
 	movel	%a2@,%d2
 	movel	%d3,%d2
 	pmove	%a1@(4),%tc
