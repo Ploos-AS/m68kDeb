@@ -1,14 +1,16 @@
 /*
- * M1.3b.4b.6b.97-PMMU: compare external and local data under active TC.
+ * M1.3b.4b.6b.98-PMMU: read external a0 through the 0x40000000 alias.
  *
- * 6b.95 fails when an ordinary post-TC longword read dereferences the original
- * external a0 pointer. 6b.96 passes when the same pointer value is only copied.
- * Snapshot the first external longword into local PC-relative storage before
- * enabling TC, then read that local copy after the translated jump.
+ * 6b.95 fails on a direct post-TC read through the original external a0
+ * address, while 6b.97 passes when the same data is copied locally before TC
+ * and read PC-relative afterwards. Linux's 68030 setup provides the Zorro III
+ * 0x40000000 transparent-translation window. Form that alias for the external
+ * operand and dereference it after TC.
  *
- * PASS shows ordinary post-TC data reads are viable and isolates the failure
- * to translation/reachability of the external a0 region rather than MOVEL or
- * post-TC data access in general.
+ * PASS shows the external storage remains reachable through the intended TT1
+ * alias and turns the earlier failure into an address-space selection issue.
+ * FAIL means the external operand is not rescued by the Linux-like alias and
+ * needs explicit mapping/placement analysis.
  */
 
 	.text
@@ -30,7 +32,9 @@ m68kdeb_68030_pmmu_smoke_entry:
 1:
 	pmove	%srp,%a1@(12)
 	pmove	%a1@(12),%srp
-	movel	%a1@(20),%d2
+	movel	%a0,%a2
+	orl	#0x40000000,%a2
+	movel	%a2@,%d2
 	movel	%d3,%d2
 	pmove	%a1@(4),%tc
 	pflusha
