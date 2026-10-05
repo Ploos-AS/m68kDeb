@@ -1,14 +1,11 @@
 /*
- * M1.3b.4b.6b.91-PMMU: isolate post-TC SRP write from ATC flush.
+ * M1.3b.4b.6b.92-PMMU: read SRP after TC instead of writing it.
  *
- * 6b.89 passes the full matrix with PMOVE TC followed by a translated long
- * jump. 6b.90 adds PMOVE SRP plus PFLUSHA after that jump and fails FS-UAE,
- * FS-UAE 3.2.35, and the generic smoke runtime. Keep the post-TC SRP write
- * but remove only the following PFLUSHA. PASS implicates the flush; FAIL
- * implicates the SRP write itself or the translated state immediately after it.
- *
- * The post-TC SRP write reloads the same known-good root pointer, so no page
- * table topology change is introduced by this probe.
+ * 6b.89 passes the full matrix after PMOVE TC and a translated long jump.
+ * 6b.91 fails the real runtimes when the next PMMU operation writes SRP, even
+ * without PFLUSHA. Replace that write with an SRP readback to writable storage.
+ * PASS isolates the failure to post-TC SRP writes; FAIL points more broadly at
+ * SRP/PMMU access or the translated data access performed by PMOVE.
  */
 
 	.text
@@ -27,7 +24,7 @@ m68kdeb_68030_pmmu_smoke_entry:
 	pmove	%a1@,%tc
 	jmp	1f
 1:
-	pmove	%a0@,%srp
+	pmove	%srp,%a1@(12)
 	movel	%d3,%d2
 	pmove	%a1@(4),%tc
 	pflusha
@@ -40,6 +37,8 @@ m68kdeb_68030_pmmu_smoke_tc:
 	.long	0x82c07760
 	.long	0x00000000
 	.long	0x13579bdf
+	.long	0x00000000
+	.long	0x00000000
 
 	.balign 4
 m68kdeb_68030_pmmu_smoke_end:
