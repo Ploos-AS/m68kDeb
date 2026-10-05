@@ -1,13 +1,14 @@
 /*
- * M1.3b.4b.6b.94-PMMU: compare SRP operand addresses under active TC.
+ * M1.3b.4b.6b.95-PMMU: ordinary read through external a0 under active TC.
  *
- * 6b.91 fails when the post-TC SRP image is loaded directly from the external
- * qualifier pointer in a0. 6b.93 passes the full matrix when the active SRP is
- * first read into local translated storage and that identical image is written
- * back. Preserve the proven read/write-back, then perform a second SRP write
- * from the original a0 operand. Both images should describe the same known-good
- * root. A failure therefore points at the operand/data-address path rather than
- * the SRP value or SRP writes in general.
+ * 6b.93 passes when active SRP is read to local storage and written back.
+ * 6b.94 fails current FS-UAE, FS-UAE 3.2.35, and generic smoke after adding a
+ * post-TC PMOVE from the original external a0 operand. Replace only that PMOVE
+ * with an ordinary longword read through the same a0 address.
+ *
+ * PASS says the translated a0 data path itself works and implicates PMOVE's
+ * memory operand semantics. FAIL says the external a0 address/data translation
+ * is already sufficient to reproduce the problem.
  */
 
 	.text
@@ -28,7 +29,7 @@ m68kdeb_68030_pmmu_smoke_entry:
 1:
 	pmove	%srp,%a1@(12)
 	pmove	%a1@(12),%srp
-	pmove	%a0@,%srp
+	movel	%a0@,%d2
 	movel	%d3,%d2
 	pmove	%a1@(4),%tc
 	pflusha
