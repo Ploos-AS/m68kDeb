@@ -1,14 +1,14 @@
 /*
- * M1.3b.4b.6b.101-PMMU: isolate post-TC SRP write with mapped operand.
+ * M1.3b.4b.6b.102-PMMU: isolate mapped external read after TC.
  *
- * 6b.100 keeps the incoming SRP image in the explicitly mapped successor
- * page, but still combines a post-TC SRP write with an external/TT1 data
- * probe and fails the real runtimes. Remove that external access completely.
- * The only substantive post-jump PMMU operation retained is readback of SRP
- * to local mapped storage followed by writing the identical image back.
+ * 6b.101 passes current FS-UAE, FS-UAE 3.2.35, and generic smoke with
+ * post-TC SRP read/write using local mapped storage. Reintroduce only the
+ * ordinary external data read, but point it at the copied SRP image that is
+ * explicitly mapped in the successor page rather than the original incoming
+ * a0 address or TT1 alias.
  *
- * FAIL strongly isolates PMOVE memory->SRP while translation is active.
- * PASS would instead implicate the external data/alias access from 6b.100.
+ * PASS confirms the earlier failures are address-space/mapping selection,
+ * not translated data reads or post-TC SRP writes themselves.
  */
 
 	.text
@@ -30,6 +30,7 @@ m68kdeb_68030_pmmu_smoke_entry:
 1:
 	pmove	%srp,%a1@(12)
 	pmove	%a1@(12),%srp
+	movel	%a1@(20),%d2
 	movel	%d3,%d2
 	pmove	%a1@(4),%tc
 	pflusha
