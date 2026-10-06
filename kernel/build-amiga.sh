@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-# M1.3b.4b.6b.12 runtime diagnostics for the 68030 Linux MMU handoff.
+# M1.3b.4b.6b.103 runtime diagnostics for the 68030 Linux MMU handoff.
 LINUX_VERSION=${LINUX_VERSION:-7.2.4}
 LINUX_SHA256=${LINUX_SHA256:-01710ee01737dac492f1bae52becd057e08d20d11589089aa06accff415c28dd}
 JOBS=${JOBS:-2}
@@ -246,9 +246,18 @@ tc_repl = (
     "\tputc\t'M'\n"
     # Do not insert any diagnostic operation between PMOVE TC and the long
     # jump. The transition must remain exactly the upstream sequence.
+    # 6b.103: do not make serial I/O the first translated operation. The old
+    # N marker itself can fault if its hardware address is not reachable under
+    # the freshly enabled Linux mapping, making a successful long jump look
+    # like a fetch failure. Keep a mapped zero TC image at a0+12, execute one
+    # harmless translated NOP, disable translation again, then emit N.
+    "\tclrl\t%a0@(12)\n"
     "\tpmove\t%a0@(8),%tc\t/* enable the MMU */\n"
     "\tjmp\t1f:l\n"
-    "1:\tputc\t'N'\n"
+    "1:\tnop\n"
+    "\tpmove\t%a0@(12),%tc\n"
+    "\tpflusha\n"
+    "\tputc\t'N'\n"
     "\tmovel\t%a2,%a0@(4)\n"
 )
 block = block[:tc_pos] + tc_repl + block[tc_pos + len(tc_anchor):]
@@ -256,7 +265,7 @@ block = block[:tc_pos] + tc_repl + block[tc_pos + len(tc_anchor):]
 text = text[:start] + block + text[end:]
 path.write_text(text)
 PY
-printf '%s\n' 'H->J(entry)->K(SRP)->L(PFLUSHA)->T(a3,a2,TT1)->S(srp-image)->Q(srp-readback,tc-readback,sr)->R(logical-map)->P(physical-map)->F(post-TC-fetch-page)->V(fetch-neighbor-PTEs)->M(pre-TC)->long-jump->N' > "$OUT/MMU_68030_TRACE.txt"
+printf '%s\n' 'H->J(entry)->K(SRP)->L(PFLUSHA)->T(a3,a2,TT1)->S(srp-image)->Q(srp-readback,tc-readback,sr)->R(logical-map)->P(physical-map)->F(post-TC-fetch-page)->V(fetch-neighbor-PTEs)->M(pre-TC)->long-jump->NOP->TC-off->N' > "$OUT/MMU_68030_TRACE.txt"
 
 make -C "$SRC" ARCH=m68k CROSS_COMPILE=m68k-linux-gnu- amiga_defconfig
 
