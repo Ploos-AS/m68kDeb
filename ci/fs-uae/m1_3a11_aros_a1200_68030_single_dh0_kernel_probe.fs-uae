@@ -4,6 +4,7 @@ cpu = 68030
 kickstart_file = out/m1-3a11/rom/aros-rom.bin
 kickstart_ext_file = out/m1-3a11/rom/aros-ext.bin
 uae_cpu_speed = real
+fast_memory = 8192
 hard_drive_0 = out/m1-3a11/aros-root
 hard_drive_0_label = System
 hard_drive_0_read_only = 0
@@ -14,7 +15,8 @@ window_height = 576
 logs_dir = out/m1-3a11/logs
 screenshots_dir = out/m1-3a11/screenshots
 
-# M1.3a.11 preserves the M1.3a.10 PASS topology: one writable AROS
+# M1.3a.11 uses 8 MiB Zorro II Fast RAM so amiboot 5.6 has Linux-loadable memory.
+# It otherwise preserves the M1.3a.10 PASS topology: one writable AROS
 # directory hard drive and the matching 2026-09-08 AROS ROM pair outside DH0.
 # The only additional payload beyond amiboot is the uncompressed Amiga Linux
 # kernel. No initramfs, second hard drive, accelerator ROM, or proprietary ROM.
