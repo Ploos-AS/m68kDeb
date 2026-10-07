@@ -27,7 +27,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             bc bison build-essential ca-certificates curl flex fs-uae \
             gcc-m68k-linux-gnu libelf-dev libssl-dev make scrot socat \
-            unzip xvfb xorriso xz-utils
+            unzip xdotool xvfb xorriso xz-utils
           fs-uae --version
 
       - name: Build pinned Amiga kernel and fetch amiboot
