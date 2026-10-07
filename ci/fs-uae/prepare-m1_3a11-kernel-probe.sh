@@ -47,7 +47,7 @@ cat > "$OUT/aros-root/S/Startup-Sequence" <<'EOF'
 C:Echo "M1.3a.11 Startup-Sequence reached" >SYS:m1-3a11-startup.marker
 C:Stack 100000
 C:Echo "M1.3a.11 invoking amiboot kernel-only probe" >SYS:m1-3a11-invoking-kernel.marker
-SYS:amiboot -d -k SYS:vmlinux-m68k-amiga root=/dev/ram video=pal console=ttyS0,9600n8
+SYS:amiboot -k SYS:vmlinux-m68k-amiga root=/dev/ram video=pal console=ttyS0,9600n8
 C:Echo "M1.3a.11 amiboot returned unexpectedly"
 C:Wait 300
 EOF
