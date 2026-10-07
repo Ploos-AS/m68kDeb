@@ -67,10 +67,19 @@ jobs:
             emu=$!
             startup=0
             invoking=0
+            continued=0
             linux=0
             for i in $(seq 1 600); do
               [ -f out/m1-3a11/aros-root/m1-3a11-startup.marker ] && startup=1
               [ -f out/m1-3a11/aros-root/m1-3a11-invoking-kernel.marker ] && invoking=1
+              if [ "$invoking" -eq 1 ] && [ "$continued" -eq 0 ]; then
+                sleep 2
+                if win=$(xdotool search --name "FS-UAE" 2>/dev/null | head -n 1) && [ -n "$win" ]; then
+                  xdotool windowactivate --sync "$win" key Return
+                  continued=1
+                  echo "M1.3a.11: sent Return to amiboot interactive continue prompt"
+                fi
+              fi
               if grep -Eq "Linux version|Booting Linux|Calibrating delay loop|Memory: .* available" out/m1-3a11/serial.log 2>/dev/null; then
                 linux=1
                 break
@@ -86,7 +95,7 @@ jobs:
             sleep 2
             kill -TERM "$emu" 2>/dev/null || true
             wait "$emu" 2>/dev/null || true
-            printf "startup=%s\ninvoking=%s\nlinux=%s\n" "$startup" "$invoking" "$linux" > out/m1-3a11/BOUNDARIES.txt
+            printf "startup=%s\ninvoking=%s\ncontinued=%s\nlinux=%s\n" "$startup" "$invoking" "$continued" "$linux" > out/m1-3a11/BOUNDARIES.txt
             if [ "$startup" -ne 1 ]; then
               echo "M1.3a.11 FAIL boundary: AROS did not reach Startup-Sequence" >&2
               cat out/m1-3a11/serial.log >&2 || true
@@ -97,8 +106,12 @@ jobs:
               echo "M1.3a.11 FAIL boundary: Startup reached but kernel invocation marker absent" >&2
               exit 1
             fi
+            if [ "$continued" -ne 1 ]; then
+              echo "M1.3a.11 FAIL boundary: amiboot prompt reached but CI could not send continue key" >&2
+              exit 1
+            fi
             if [ "$linux" -ne 1 ]; then
-              echo "M1.3a.11 FAIL boundary: amiboot invoked kernel but no Linux execution marker observed" >&2
+              echo "M1.3a.11 FAIL boundary: amiboot continued but no Linux execution marker observed" >&2
               cat out/m1-3a11/serial.log >&2 || true
               tail -200 out/m1-3a11/fs-uae.stdout.log >&2 || true
               exit 1
