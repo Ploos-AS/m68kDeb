@@ -75,7 +75,7 @@ jobs:
               if [ "$invoking" -eq 1 ] && [ "$continued" -eq 0 ]; then
                 sleep 2
                 if win=$(xdotool search --name "FS-UAE" 2>/dev/null | head -n 1) && [ -n "$win" ]; then
-                  xdotool windowactivate --sync "$win" key Return
+                  xdotool key --window "$win" Return
                   continued=1
                   echo "M1.3a.11: sent Return to amiboot interactive continue prompt"
                 fi
