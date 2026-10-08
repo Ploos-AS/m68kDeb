@@ -247,7 +247,8 @@ tc_repl = (
     # 6b.112: preserve the 6b.111 SFC/DFC diagnostics and test the
     # supervisor-data translation of the known-good instruction target.
     # PTEST with FC=5 (supervisor data), level=7 (full table walk), followed
-    # by PMOVE MMUSR, records the MMU status before the faulting MOVE.L.
+    # by PMOVE PSR (the 68030 MMUSR alias), records MMU status. Note that
+    # the PSR destination itself is a data write under TC and may fault.
     # X <mmusr> appears only if the PTEST/MMUSR diagnostic itself completes.
     "\tputc\t'W'\n"
     "\tmoveq\t#0,%d0\n"
@@ -261,8 +262,8 @@ tc_repl = (
     "\tpmove\t%a0@(8),%tc\t/* enable the MMU */\n"
     "\tnop\n"
     "\tjmp\t%a1@\n"
-    "1:\tptestr\t%a1@,#5,#7\n"
-    "\tpmove\t%mmusr,%a0@(16)\n"
+    "1:\tptestr\t#5,%a1@,#7\n"
+    "\tpmove\t%psr,%a0@(16)\n"
     "\tputc\t'X'\n"
     "\tmovel\t%a0@(16),%d0\n"
     "\tputn\t%d0\n"
