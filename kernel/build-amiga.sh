@@ -244,18 +244,17 @@ tc_repl = (
     "\tlea\t%pc@(L(mmu_engage_030_temp)),%a0\n"
     "\tmovel\t#0x82c07760,%a0@(8)\n"
     "\tputc\t'M'\n"
-    # 6b.108: 6b.107 died before O on movel %a2,%a0@(4), proving the
-    # pre-TC a0 alias is not safe for target-side data access. Recompute the
-    # physical/PC-relative address of mmu_engage_030_temp after the known-good
-    # indirect jump, perform the same store through that alias, then disable TC.
-    # O proves the store completed; N proves the complete probe returned.
+    # 6b.109: 6b.108 died before O on the target-side data write.
+    # Keep the same known-good control transfer and physical/PC-relative temp
+    # alias, but replace the write with a read from the same longword. O proves
+    # data reads translate; N proves TC-off still completes.
     "\tclrl\t%a0@(12)\n"
     "\tlea\t%pc@(1f),%a1\n"
     "\tpmove\t%a0@(8),%tc\t/* enable the MMU */\n"
     "\tnop\n"
     "\tjmp\t%a1@\n"
     "1:\tlea\t%pc@(L(mmu_engage_030_temp)),%a0\n"
-    "\tmovel\t%a2,%a0@(4)\n"
+    "\tmovel\t%a0@(4),%d0\n"
     "\tputc\t'O'\n"
     "\tpmove\t%a0@(12),%tc\n"
     "\tpflusha\n"
@@ -266,7 +265,7 @@ block = block[:tc_pos] + tc_repl + block[tc_pos + len(tc_anchor):]
 text = text[:start] + block + text[end:]
 path.write_text(text)
 PY
-printf '%s\n' 'H->J(entry)->K(SRP)->L(PFLUSHA)->T(a3,a2,TT1)->S(srp-image)->Q(srp-readback,tc-readback,sr)->R(logical-map)->P(physical-map)->F(post-TC-fetch-page)->V(fetch-neighbor-PTEs)->M(pre-TC)->physical-target-in-a1->sequential-NOP->indirect-JMP->rebase-temp-a0->store-a2-temp->O->TC-off->N' > "$OUT/MMU_68030_TRACE.txt"
+printf '%s\n' 'H->J(entry)->K(SRP)->L(PFLUSHA)->T(a3,a2,TT1)->S(srp-image)->Q(srp-readback,tc-readback,sr)->R(logical-map)->P(physical-map)->F(post-TC-fetch-page)->V(fetch-neighbor-PTEs)->M(pre-TC)->physical-target-in-a1->sequential-NOP->indirect-JMP->rebase-temp-a0->read-temp->O->TC-off->N' > "$OUT/MMU_68030_TRACE.txt"
 
 make -C "$SRC" ARCH=m68k CROSS_COMPILE=m68k-linux-gnu- amiga_defconfig
 
