@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-# M1.3b.4b.6b.105 runtime diagnostics for the 68030 Linux MMU handoff.
+# M1.3b.4b.6b.106 runtime diagnostics for the 68030 Linux MMU handoff.
 LINUX_VERSION=${LINUX_VERSION:-7.2.4}
 LINUX_SHA256=${LINUX_SHA256:-01710ee01737dac492f1bae52becd057e08d20d11589089aa06accff415c28dd}
 JOBS=${JOBS:-2}
@@ -244,14 +244,18 @@ tc_repl = (
     "\tlea\t%pc@(L(mmu_engage_030_temp)),%a0\n"
     "\tmovel\t#0x82c07760,%a0@(8)\n"
     "\tputc\t'M'\n"
-    # 6b.105: 6b.104 proved a sequential translated fetch by reaching N.
-    # Reintroduce only the original absolute long jump while keeping serial
-    # output and TC-off after the target. O marks the physical pre-jump side;
-    # N proves that the translated long-jump target itself was reached.
+    # 6b.106: 6b.105 proved that the original absolute linked-address jump
+    # dies after M, while 6b.104 proved sequential translated fetch works.
+    # Compute the physical/PC-relative alias of the same target before TC-on,
+    # keep it in a1, then execute an indirect JMP while translation is active.
+    # If N returns, JMP itself is sound and the linked/logical target alias is
+    # the isolated failure. If N is still absent, control-transfer semantics
+    # under TC-on need further isolation.
     "\tclrl\t%a0@(12)\n"
+    "\tlea\t%pc@(1f),%a1\n"
     "\tpmove\t%a0@(8),%tc\t/* enable the MMU */\n"
     "\tnop\n"
-    "\tjmp\t1f:l\n"
+    "\tjmp\t%a1@\n"
     "1:\tpmove\t%a0@(12),%tc\n"
     "\tpflusha\n"
     "\tputc\t'N'\n"
@@ -262,7 +266,7 @@ block = block[:tc_pos] + tc_repl + block[tc_pos + len(tc_anchor):]
 text = text[:start] + block + text[end:]
 path.write_text(text)
 PY
-printf '%s\n' 'H->J(entry)->K(SRP)->L(PFLUSHA)->T(a3,a2,TT1)->S(srp-image)->Q(srp-readback,tc-readback,sr)->R(logical-map)->P(physical-map)->F(post-TC-fetch-page)->V(fetch-neighbor-PTEs)->M(pre-TC)->sequential-NOP->absolute-long-jump->TC-off->N' > "$OUT/MMU_68030_TRACE.txt"
+printf '%s\n' 'H->J(entry)->K(SRP)->L(PFLUSHA)->T(a3,a2,TT1)->S(srp-image)->Q(srp-readback,tc-readback,sr)->R(logical-map)->P(physical-map)->F(post-TC-fetch-page)->V(fetch-neighbor-PTEs)->M(pre-TC)->physical-target-in-a1->sequential-NOP->indirect-JMP->TC-off->N' > "$OUT/MMU_68030_TRACE.txt"
 
 make -C "$SRC" ARCH=m68k CROSS_COMPILE=m68k-linux-gnu- amiga_defconfig
 
