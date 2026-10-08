@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-# M1.3b.4b.6b.116 runtime diagnostics for the 68030 Linux MMU handoff.
+# M1.3b.4b.6b.117 runtime diagnostics for the 68030 Linux MMU handoff.
 LINUX_VERSION=${LINUX_VERSION:-7.2.4}
 LINUX_SHA256=${LINUX_SHA256:-01710ee01737dac492f1bae52becd057e08d20d11589089aa06accff415c28dd}
 JOBS=${JOBS:-2}
@@ -244,10 +244,10 @@ tc_repl = (
     "\tlea\t%pc@(L(mmu_engage_030_temp)),%a0\n"
     "\tmovel\t#0x82c07760,%a0@(8)\n"
     "\tputc\t'M'\n"
-    # 6b.116: MC68030 MMUSR is 16-bit. 6b.115 read a full longword
-    # (0x02030588), so the high half was not MMUSR. Zero-extend the actual
-    # 16-bit PSR/MMUSR and read the descriptor pointed to by PTEST's A2
-    # after TC-off. No additional data accesses are made under active TC.
+    # 6b.117: compare a full level-7 table walk with a level-0 ATC
+    # lookup for the same supervisor-data address. Capture each PSR/MMUSR
+    # immediately after its PTEST while TC is active, but defer all serial
+    # output until after TC-off. A2 retains the level-7 descriptor address.
     "\tputc\t'W'\n"
     "\tmoveq\t#0,%d0\n"
     "\tmovec\t%sfc,%d0\n"
@@ -261,13 +261,17 @@ tc_repl = (
     "\tnop\n"
     "\tjmp\t%a1@\n"
     "1:\tptestr\t#5,%a1@,#7,%a2\n"
+    "\tpmove\t%psr,%a0@(16)\n"
+    "\tptestr\t#5,%a1@,#0\n"
+    "\tpmove\t%psr,%a0@(18)\n"
     "\tpmove\t%a0@(12),%tc\n"
     "\tpflusha\n"
     "\tputc\t'X'\n"
-    "\tclrl\t%a0@(16)\n"
-    "\tpmove\t%psr,%a0@(16)\n"
     "\tmoveq\t#0,%d0\n"
     "\tmovew\t%a0@(16),%d0\n"
+    "\tputn\t%d0\n"
+    "\tmoveq\t#0,%d0\n"
+    "\tmovew\t%a0@(18),%d0\n"
     "\tputn\t%d0\n"
     "\tputn\t%a2\n"
     "\tmovel\t%a2@,%d0\n"
@@ -282,7 +286,7 @@ block = block[:tc_pos] + tc_repl + block[tc_pos + len(tc_anchor):]
 text = text[:start] + block + text[end:]
 path.write_text(text)
 PY
-printf '%s\n' 'H->J(entry)->K(SRP)->L(PFLUSHA)->T(a3,a2,TT1)->S(srp-image)->Q(srp-readback,tc-readback,sr)->R(logical-map)->P(physical-map)->F(post-TC-fetch-page)->V(fetch-neighbor-PTEs)->M(pre-TC)->W(sfc,dfc)->physical-target-in-a1->sequential-NOP->indirect-JMP->PTEST(supervisor-data,A2=descriptor)->TC-off->X(mmusr16,descriptor-address,descriptor-value)->read-fetch-target-via-a1->O->N' > "$OUT/MMU_68030_TRACE.txt"
+printf '%s\n' 'H->J(entry)->K(SRP)->L(PFLUSHA)->T(a3,a2,TT1)->S(srp-image)->Q(srp-readback,tc-readback,sr)->R(logical-map)->P(physical-map)->F(post-TC-fetch-page)->V(fetch-neighbor-PTEs)->M(pre-TC)->W(sfc,dfc)->physical-target-in-a1->sequential-NOP->indirect-JMP->PTEST-L7(supervisor-data,A2=descriptor)->MMUSR7->PTEST-L0(ATC)->MMUSR0->TC-off->X(mmusr7,mmusr0,descriptor-address,descriptor-value)->read-fetch-target-via-a1->O->N' > "$OUT/MMU_68030_TRACE.txt"
 
 make -C "$SRC" ARCH=m68k CROSS_COMPILE=m68k-linux-gnu- amiga_defconfig
 
