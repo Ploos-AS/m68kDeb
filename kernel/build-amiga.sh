@@ -244,29 +244,27 @@ tc_repl = (
     "\tlea\t%pc@(L(mmu_engage_030_temp)),%a0\n"
     "\tmovel\t#0x82c07760,%a0@(8)\n"
     "\tputc\t'M'\n"
-    # 6b.106: 6b.105 proved that the original absolute linked-address jump
-    # dies after M, while 6b.104 proved sequential translated fetch works.
-    # Compute the physical/PC-relative alias of the same target before TC-on,
-    # keep it in a1, then execute an indirect JMP while translation is active.
-    # If N returns, JMP itself is sound and the linked/logical target alias is
-    # the isolated failure. If N is still absent, control-transfer semantics
-    # under TC-on need further isolation.
+    # 6b.107: 6b.106 reached N through the physical/PC-relative alias.
+    # Keep that known-good control transfer and restore exactly the next
+    # original operation, movel %a2,%a0@(4), while TC is still enabled.
+    # O proves the target-side store completed; N proves TC-off still works.
     "\tclrl\t%a0@(12)\n"
     "\tlea\t%pc@(1f),%a1\n"
     "\tpmove\t%a0@(8),%tc\t/* enable the MMU */\n"
     "\tnop\n"
     "\tjmp\t%a1@\n"
-    "1:\tpmove\t%a0@(12),%tc\n"
+    "1:\tmovel\t%a2,%a0@(4)\n"
+    "\tputc\t'O'\n"
+    "\tpmove\t%a0@(12),%tc\n"
     "\tpflusha\n"
     "\tputc\t'N'\n"
-    "\tmovel\t%a2,%a0@(4)\n"
 )
 block = block[:tc_pos] + tc_repl + block[tc_pos + len(tc_anchor):]
 
 text = text[:start] + block + text[end:]
 path.write_text(text)
 PY
-printf '%s\n' 'H->J(entry)->K(SRP)->L(PFLUSHA)->T(a3,a2,TT1)->S(srp-image)->Q(srp-readback,tc-readback,sr)->R(logical-map)->P(physical-map)->F(post-TC-fetch-page)->V(fetch-neighbor-PTEs)->M(pre-TC)->physical-target-in-a1->sequential-NOP->indirect-JMP->TC-off->N' > "$OUT/MMU_68030_TRACE.txt"
+printf '%s\n' 'H->J(entry)->K(SRP)->L(PFLUSHA)->T(a3,a2,TT1)->S(srp-image)->Q(srp-readback,tc-readback,sr)->R(logical-map)->P(physical-map)->F(post-TC-fetch-page)->V(fetch-neighbor-PTEs)->M(pre-TC)->physical-target-in-a1->sequential-NOP->indirect-JMP->store-a2-temp->O->TC-off->N' > "$OUT/MMU_68030_TRACE.txt"
 
 make -C "$SRC" ARCH=m68k CROSS_COMPILE=m68k-linux-gnu- amiga_defconfig
 
