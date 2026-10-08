@@ -244,10 +244,17 @@ tc_repl = (
     "\tlea\t%pc@(L(mmu_engage_030_temp)),%a0\n"
     "\tmovel\t#0x82c07760,%a0@(8)\n"
     "\tputc\t'M'\n"
-    # 6b.110: 6b.109 proved that a data read from the temp alias dies
-    # under TC. Read instead from the exact physical/PC-relative target address
-    # whose instruction fetch is already proven by 6b.106. If O is absent here,
-    # instruction fetch works while data access to the same mapped page does not.
+    # 6b.111: 6b.110 proved instruction fetch succeeds while a data read
+    # from the same target address fails. Record SFC/DFC immediately before
+    # enabling translation, then retain the exact 6b.110 read probe unchanged.
+    # W <sfc> <dfc> makes the function-code state explicit in the evidence.
+    "\tputc\t'W'\n"
+    "\tmoveq\t#0,%d0\n"
+    "\tmovec\t%sfc,%d0\n"
+    "\tputn\t%d0\n"
+    "\tmoveq\t#0,%d0\n"
+    "\tmovec\t%dfc,%d0\n"
+    "\tputn\t%d0\n"
     "\tclrl\t%a0@(12)\n"
     "\tlea\t%pc@(1f),%a1\n"
     "\tpmove\t%a0@(8),%tc\t/* enable the MMU */\n"
@@ -264,7 +271,7 @@ block = block[:tc_pos] + tc_repl + block[tc_pos + len(tc_anchor):]
 text = text[:start] + block + text[end:]
 path.write_text(text)
 PY
-printf '%s\n' 'H->J(entry)->K(SRP)->L(PFLUSHA)->T(a3,a2,TT1)->S(srp-image)->Q(srp-readback,tc-readback,sr)->R(logical-map)->P(physical-map)->F(post-TC-fetch-page)->V(fetch-neighbor-PTEs)->M(pre-TC)->physical-target-in-a1->sequential-NOP->indirect-JMP->read-fetch-target-via-a1->O->TC-off->N' > "$OUT/MMU_68030_TRACE.txt"
+printf '%s\n' 'H->J(entry)->K(SRP)->L(PFLUSHA)->T(a3,a2,TT1)->S(srp-image)->Q(srp-readback,tc-readback,sr)->R(logical-map)->P(physical-map)->F(post-TC-fetch-page)->V(fetch-neighbor-PTEs)->M(pre-TC)->W(sfc,dfc)->physical-target-in-a1->sequential-NOP->indirect-JMP->read-fetch-target-via-a1->O->TC-off->N' > "$OUT/MMU_68030_TRACE.txt"
 
 make -C "$SRC" ARCH=m68k CROSS_COMPILE=m68k-linux-gnu- amiga_defconfig
 
