@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-# M1.3b.4b.6b.122 Linux handoff fix for the 68030 Linux MMU handoff.
+# M1.3b.4b.6b.123 Linux handoff fix for the 68030 Linux MMU handoff.
 LINUX_VERSION=${LINUX_VERSION:-7.2.4}
 LINUX_SHA256=${LINUX_SHA256:-01710ee01737dac492f1bae52becd057e08d20d11589089aa06accff415c28dd}
 JOBS=${JOBS:-2}
@@ -244,14 +244,13 @@ tc_repl = (
     "\tlea\t%pc@(L(mmu_engage_030_temp)),%a0\n"
     "\tmovel\t#0x82c07760,%a0@(8)\n"
     "\tputc\t'M'\n"
-    # 6b.122: production-oriented Linux handoff. Keep Linux's original
-    # SRP/TC setup and post-label body, but replace the failing absolute
-    # linked-address jump with the physical PC-relative target that 6b.106+
-    # proved executable. Do not disable TC; continue normal Linux MMU init.
+    # 6b.123: keep the proven physical PC-relative indirect branch, but
+    # match upstream ordering exactly: TC enable immediately followed by
+    # the control transfer, with no additional PFLUSHA between them.
+    # Continue Linux's original post-label MMU initialization with TC on.
     "\tputc\t'W'\n"
     "\tlea\t%pc@(1f),%a1\n"
     "\tpmove\t%a0@(8),%tc\t/* enable the MMU */\n"
-    "\tpflusha\n"
     "\tjmp\t%a1@\n"
     "1:\tmovel\t%a2,%a0@(4)\n"
 )
@@ -260,7 +259,7 @@ block = block[:tc_pos] + tc_repl + block[tc_pos + len(tc_anchor):]
 text = text[:start] + block + text[end:]
 path.write_text(text)
 PY
-printf '%s\n' '6b.122 Linux handoff: preserve upstream SRP/TC setup; replace absolute post-TC JMP with PC-relative physical target; continue upstream mmu_engage_030 with TC active' > "$OUT/MMU_68030_TRACE.txt"
+printf '%s\n' '6b.123 Linux handoff: TC enable then PC-relative indirect jump without extra ATC flush; continue upstream mmu_engage_030 with TC active' > "$OUT/MMU_68030_TRACE.txt"
 
 make -C "$SRC" ARCH=m68k CROSS_COMPILE=m68k-linux-gnu- amiga_defconfig
 
