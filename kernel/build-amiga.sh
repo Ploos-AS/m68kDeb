@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-# M1.3b.4b.6b.123 Linux handoff fix for the 68030 Linux MMU handoff.
+# M1.3b.4b.6b.124 Linux virtual handoff for the 68030 Linux MMU handoff.
 LINUX_VERSION=${LINUX_VERSION:-7.2.4}
 LINUX_SHA256=${LINUX_SHA256:-01710ee01737dac492f1bae52becd057e08d20d11589089aa06accff415c28dd}
 JOBS=${JOBS:-2}
@@ -244,13 +244,14 @@ tc_repl = (
     "\tlea\t%pc@(L(mmu_engage_030_temp)),%a0\n"
     "\tmovel\t#0x82c07760,%a0@(8)\n"
     "\tputc\t'M'\n"
-    # 6b.123: keep the proven physical PC-relative indirect branch, but
-    # match upstream ordering exactly: TC enable immediately followed by
-    # the control transfer, with no additional PFLUSHA between them.
-    # Continue Linux's original post-label MMU initialization with TC on.
+    # 6b.124: use the proven physical alias only as the TC-enable
+    # trampoline. Preload A1 with the linked virtual address of label 1 while
+    # translation is still off, enable TC, execute one sequential instruction
+    # from the physical alias, then enter Linux at its intended virtual PC.
     "\tputc\t'W'\n"
-    "\tlea\t%pc@(1f),%a1\n"
+    "\tmovel\t#1f,%a1\n"
     "\tpmove\t%a0@(8),%tc\t/* enable the MMU */\n"
+    "\tnop\n"
     "\tjmp\t%a1@\n"
     "1:\tmovel\t%a2,%a0@(4)\n"
 )
@@ -259,7 +260,7 @@ block = block[:tc_pos] + tc_repl + block[tc_pos + len(tc_anchor):]
 text = text[:start] + block + text[end:]
 path.write_text(text)
 PY
-printf '%s\n' '6b.123 Linux handoff: TC enable then PC-relative indirect jump without extra ATC flush; continue upstream mmu_engage_030 with TC active' > "$OUT/MMU_68030_TRACE.txt"
+printf '%s\n' '6b.124 Linux handoff: physical TC-enable trampoline then indirect jump to linked virtual label; continue upstream mmu_engage_030 with TC active' > "$OUT/MMU_68030_TRACE.txt"
 
 make -C "$SRC" ARCH=m68k CROSS_COMPILE=m68k-linux-gnu- amiga_defconfig
 
