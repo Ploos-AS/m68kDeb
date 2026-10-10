@@ -33,11 +33,13 @@ jobs:
       - name: Build pinned Amiga kernel and fetch amiboot
         run: |
           sh kernel/build-amiga.sh
+          sh initramfs/build-amiga.sh
           sh platforms/amiga/fetch-amiboot.sh
           mkdir -p out/m68kdeb-amiga
           cp out/amiboot/amiboot out/m68kdeb-amiga/amiboot
           cp out/kernel-amiga/vmlinux-m68k-amiga out/m68kdeb-amiga/vmlinux-m68k-amiga
-          sha256sum out/m68kdeb-amiga/amiboot out/m68kdeb-amiga/vmlinux-m68k-amiga
+          cp out/initramfs-amiga/initramfs-m68kdeb.gz out/m68kdeb-amiga/initramfs-m68kdeb.gz
+          sha256sum out/m68kdeb-amiga/amiboot out/m68kdeb-amiga/vmlinux-m68k-amiga out/m68kdeb-amiga/initramfs-m68kdeb.gz
 
       - name: Prepare known-good single-DH0 topology plus kernel only
         run: sh ci/fs-uae/prepare-m1_3a11-kernel-probe.sh
@@ -80,7 +82,7 @@ jobs:
                   echo "M1.3a.11: sent Return to amiboot interactive continue prompt"
                 fi
               fi
-              if grep -Eq "Linux version|Booting Linux|Calibrating delay loop|Memory: .* available" out/m1-3a11/serial.log 2>/dev/null; then
+              if grep -Fq "M1.3 bootstrap reached userspace." out/m1-3a11/serial.log 2>/dev/null; then
                 linux=1
                 break
               fi
@@ -136,11 +138,11 @@ jobs:
             echo "cpu_speed=real"
             echo "hard_drive_count=1"
             echo "payload_on_dh0=amiboot+vmlinux"
-            echo "initramfs=absent"
+            echo "initramfs=initramfs-m68kdeb.gz"
             echo "startup_marker=observed"
             echo "kernel_invocation_marker=observed"
-            echo "linux_kernel_marker=observed"
-            sha256sum out/m1-3a11/aros-root/amiboot out/m1-3a11/aros-root/vmlinux-m68k-amiga
+            echo "linux_kernel_marker=observed\n            echo "initramfs_userspace_marker=observed""
+            sha256sum out/m1-3a11/aros-root/amiboot out/m1-3a11/aros-root/vmlinux-m68k-amiga out/m1-3a11/aros-root/initramfs-m68kdeb.gz
             fs-uae --version | head -n 1 | sed 's/^/fs_uae=/'
           } > out/m1-3a11/RESULT.txt
 
