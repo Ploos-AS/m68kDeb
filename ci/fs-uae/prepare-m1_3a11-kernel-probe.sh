@@ -34,20 +34,20 @@ cp "$EXT" "$OUT/rom/aros-ext.bin"
 for f in S/Startup-Sequence C/Stack C/Echo C/Wait; do
   [ -e "$OUT/aros-root/$f" ] || { echo "missing AROS runtime file: $f" >&2; exit 1; }
 done
-for f in amiboot vmlinux-m68k-amiga; do
+for f in amiboot vmlinux-m68k-amiga initramfs-m68kdeb.gz; do
   [ -f "$BUNDLE/$f" ] || { echo "missing probe payload: $BUNDLE/$f" >&2; exit 1; }
 done
 
 cp "$OUT/aros-root/S/Startup-Sequence" "$OUT/ORIGINAL-Startup-Sequence"
 cp "$BUNDLE/amiboot" "$OUT/aros-root/amiboot"
-cp "$BUNDLE/vmlinux-m68k-amiga" "$OUT/aros-root/vmlinux-m68k-amiga"
+cp "$BUNDLE/vmlinux-m68k-amiga" "$OUT/aros-root/vmlinux-m68k-amiga"\ncp "$BUNDLE/initramfs-m68kdeb.gz" "$OUT/aros-root/initramfs-m68kdeb.gz"
 rm -f "$OUT/aros-root/m1-3a11-startup.marker" "$OUT/aros-root/m1-3a11-invoking-kernel.marker"
 
 cat > "$OUT/aros-root/S/Startup-Sequence" <<'EOF'
 C:Echo "M1.3a.11 Startup-Sequence reached" >SYS:m1-3a11-startup.marker
 C:Stack 100000
 C:Echo "M1.3a.11 invoking amiboot kernel-only probe" >SYS:m1-3a11-invoking-kernel.marker
-SYS:amiboot -k SYS:vmlinux-m68k-amiga root=/dev/ram video=pal console=ttyS0,9600n8
+SYS:amiboot -k SYS:vmlinux-m68k-amiga -r SYS:initramfs-m68kdeb.gz root=/dev/ram rdinit=/init video=pal console=ttyS0,9600n8
 C:Echo "M1.3a.11 amiboot returned unexpectedly"
 C:Wait 300
 EOF
@@ -65,11 +65,11 @@ EOF
   echo "rom_source=pinned AROS 2026-09-08 nightly ISO"
   echo "hard_drive_0=$OUT/aros-root"
   echo "hard_drive_1=absent"
-  echo "payload=amiboot + vmlinux-m68k-amiga on DH0"
-  echo "initramfs=absent"
-  echo "probe=observe Linux kernel banner after amiboot kernel-only invocation"
+  echo "payload=amiboot + vmlinux-m68k-amiga + initramfs-m68kdeb.gz on DH0"
+  echo "initramfs=initramfs-m68kdeb.gz"
+  echo "probe=observe Linux initramfs userspace marker after amiboot invocation"
   sha256sum "$OUT/rom/aros-rom.bin" "$OUT/rom/aros-ext.bin" \
-    "$OUT/aros-root/amiboot" "$OUT/aros-root/vmlinux-m68k-amiga" \
+    "$OUT/aros-root/amiboot" "$OUT/aros-root/vmlinux-m68k-amiga" "$OUT/aros-root/initramfs-m68kdeb.gz" \
     "$OUT/aros-root/S/Startup-Sequence" "$OUT/ORIGINAL-Startup-Sequence"
 } > "$OUT/RUNTIME_PROVENANCE.txt"
 
