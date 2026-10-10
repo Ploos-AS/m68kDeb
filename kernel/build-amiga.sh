@@ -277,7 +277,26 @@ make -C "$SRC" ARCH=m68k CROSS_COMPILE=m68k-linux-gnu- amiga_defconfig
   --enable SYSFS \
   --enable EXT4_FS \
   --enable M68KFPU_EMU \
-  --disable BLK_DEV_INTEGRITY
+  --disable BLK_DEV_INTEGRITY \
+  --disable NET \
+  --disable SCSI \
+  --disable MD \
+  --disable BLK_DEV_DM \
+  --disable DRM \
+  --disable SOUND \
+  --disable INPUT \
+  --disable USB_SUPPORT \
+  --disable ATA \
+  --disable IDE \
+  --disable BTRFS_FS \
+  --disable XFS_FS \
+  --disable NFS_FS \
+  --disable NFSD \
+  --disable CIFS \
+  --disable ISO9660_FS \
+  --disable UDF_FS \
+  --disable MODULES \
+  --disable DEBUG_KERNEL
 
 make -C "$SRC" ARCH=m68k CROSS_COMPILE=m68k-linux-gnu- olddefconfig
 make -C "$SRC" -j"$JOBS" ARCH=m68k CROSS_COMPILE=m68k-linux-gnu- zImage
