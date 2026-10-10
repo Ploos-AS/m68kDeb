@@ -276,7 +276,8 @@ make -C "$SRC" ARCH=m68k CROSS_COMPILE=m68k-linux-gnu- amiga_defconfig
   --enable PROC_FS \
   --enable SYSFS \
   --enable EXT4_FS \
-  --enable M68KFPU_EMU
+  --enable M68KFPU_EMU \
+  --disable BLK_DEV_INTEGRITY
 
 make -C "$SRC" ARCH=m68k CROSS_COMPILE=m68k-linux-gnu- olddefconfig
 make -C "$SRC" -j"$JOBS" ARCH=m68k CROSS_COMPILE=m68k-linux-gnu- zImage
