@@ -40,7 +40,8 @@ done
 
 cp "$OUT/aros-root/S/Startup-Sequence" "$OUT/ORIGINAL-Startup-Sequence"
 cp "$BUNDLE/amiboot" "$OUT/aros-root/amiboot"
-cp "$BUNDLE/vmlinux-m68k-amiga" "$OUT/aros-root/vmlinux-m68k-amiga"\ncp "$BUNDLE/initramfs-m68kdeb.gz" "$OUT/aros-root/initramfs-m68kdeb.gz"
+cp "$BUNDLE/vmlinux-m68k-amiga" "$OUT/aros-root/vmlinux-m68k-amiga"
+cp "$BUNDLE/initramfs-m68kdeb.gz" "$OUT/aros-root/initramfs-m68kdeb.gz"
 rm -f "$OUT/aros-root/m1-3a11-startup.marker" "$OUT/aros-root/m1-3a11-invoking-kernel.marker"
 
 cat > "$OUT/aros-root/S/Startup-Sequence" <<'EOF'
