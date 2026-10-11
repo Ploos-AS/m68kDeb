@@ -284,8 +284,7 @@ make -C "$SRC" ARCH=m68k CROSS_COMPILE=m68k-linux-gnu- amiga_defconfig
   --disable NFSD \
   --disable CIFS \
   --disable ISO9660_FS \
-  --disable UDF_FS \
-  --disable MODULES
+  --disable UDF_FS
 
 make -C "$SRC" ARCH=m68k CROSS_COMPILE=m68k-linux-gnu- olddefconfig
 make -C "$SRC" -j"$JOBS" ARCH=m68k CROSS_COMPILE=m68k-linux-gnu- zImage
