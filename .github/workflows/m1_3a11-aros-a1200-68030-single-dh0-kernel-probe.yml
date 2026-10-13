@@ -165,5 +165,8 @@ jobs:
             out/m1-3a11/screenshots/
             out/amiboot/SHA256SUMS
             out/kernel-amiga/linux-source.SHA256
+            out/kernel-amiga/kernel.config
+            out/kernel-amiga/System.map
+            out/kernel-amiga/SHA256SUMS
           if-no-files-found: warn
           retention-days: 14
