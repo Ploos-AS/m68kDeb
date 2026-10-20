@@ -277,6 +277,8 @@ make -C "$SRC" ARCH=m68k CROSS_COMPILE=m68k-linux-gnu- amiga_defconfig
   --enable SYSFS \
   --enable EXT4_FS \
   --enable M68KFPU_EMU \
+  --enable BINFMT_ELF \
+  --enable BINFMT_SCRIPT \
   --disable TARGET_CORE \
   --disable TCM_IBLOCK \
   --disable BLK_DEV_MD \
