@@ -48,6 +48,11 @@ printf 'busybox package path: %s\n' "${BUSYBOX_PATH#$OUT/pkg}"
 cp "$BUSYBOX_PATH" "$ROOT/bin/busybox"
 chmod 0755 "$ROOT/bin/busybox"
 
+# Record the exact userspace ELF ABI used by the bootstrap image.
+file "$ROOT/bin/busybox" || true
+readelf -h "$ROOT/bin/busybox" || true
+readelf -A "$ROOT/bin/busybox" || true
+
 for app in sh mount umount mkdir cat echo uname dmesg sleep poweroff reboot ls; do
   ln -s busybox "$ROOT/bin/$app"
 done
