@@ -8,6 +8,7 @@ on:
       - 'ci/fs-uae/m1_3a11_aros_a1200_68030_single_dh0_kernel_probe.fs-uae'
       - 'ci/fs-uae/prepare-m1_3a11-kernel-probe.sh'
       - 'kernel/build-amiga.sh'
+      - 'initramfs/**'
       - 'platforms/amiga/fetch-amiboot.sh'
 
 permissions:
