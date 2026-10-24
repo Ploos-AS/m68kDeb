@@ -36,7 +36,7 @@ dpkg-deb -x "$DEB" "$OUT/pkg"
 
 # Debian's usr-merge may place BusyBox in /usr/bin rather than /bin.
 # Do not depend on either layout: locate the extracted executable by name.
-BUSYBOX_PATH=$(find "$OUT/pkg" -type f -name busybox -print | head -n 1)
+BUSYBOX_PATH=$(find "$OUT/pkg" -type f -name busybox \( -path "*/bin/busybox" -o -path "*/usr/bin/busybox" \) -print | head -n 1)
 if [ -z "$BUSYBOX_PATH" ]; then
   echo "FAIL: busybox executable not found in extracted busybox-static package" >&2
   echo "Package contents:" >&2
@@ -47,6 +47,12 @@ fi
 printf 'busybox package path: %s\n' "${BUSYBOX_PATH#$OUT/pkg}"
 cp "$BUSYBOX_PATH" "$ROOT/bin/busybox"
 chmod 0755 "$ROOT/bin/busybox"
+
+# Fail before packaging if this is not an m68k ELF executable.
+if ! readelf -h "$ROOT/bin/busybox" | grep -Eq "Machine:[[:space:]]*Motorola 68000"; then
+  echo "FAIL: selected BusyBox is not a Motorola m68k ELF executable" >&2
+  exit 1
+fi
 
 # Record the exact userspace ELF ABI used by the bootstrap image.
 file "$ROOT/bin/busybox" || true
