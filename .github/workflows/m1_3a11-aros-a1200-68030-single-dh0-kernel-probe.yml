@@ -142,7 +142,8 @@ jobs:
             echo "initramfs=initramfs-m68kdeb.gz"
             echo "startup_marker=observed"
             echo "kernel_invocation_marker=observed"
-            echo "linux_kernel_marker=observed\n            echo "initramfs_userspace_marker=observed""
+            echo "linux_kernel_marker=observed"
+            echo "initramfs_userspace_marker=observed"
             sha256sum out/m1-3a11/aros-root/amiboot out/m1-3a11/aros-root/vmlinux-m68k-amiga out/m1-3a11/aros-root/initramfs-m68kdeb.gz
             fs-uae --version | head -n 1 | sed 's/^/fs_uae=/'
           } > out/m1-3a11/RESULT.txt
@@ -162,6 +163,7 @@ jobs:
             out/m1-3a11/serial.log
             out/m1-3a11/socat.log
             out/m1-3a11/fs-uae.stdout.log
+            out/m1-3a11/logs/fs-uae.log.txt
             out/m1-3a11/rom/
             out/m1-3a11/screenshots/
             out/amiboot/SHA256SUMS
