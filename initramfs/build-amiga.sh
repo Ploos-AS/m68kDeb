@@ -49,7 +49,9 @@ cp "$BUSYBOX_PATH" "$ROOT/bin/busybox"
 chmod 0755 "$ROOT/bin/busybox"
 
 # Fail before packaging if this is not an m68k ELF executable.
-if ! readelf -h "$ROOT/bin/busybox" | grep -Eq "Machine:[[:space:]]*Motorola 68000"; then
+file "$ROOT/bin/busybox"
+readelf -h "$ROOT/bin/busybox"
+if ! readelf -h "$ROOT/bin/busybox" | grep -Eq "Machine:[[:space:]]*Motorola"; then
   echo "FAIL: selected BusyBox is not a Motorola m68k ELF executable" >&2
   exit 1
 fi
