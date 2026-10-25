@@ -266,7 +266,9 @@ make -C "$SRC" ARCH=m68k CROSS_COMPILE=m68k-linux-gnu- amiga_defconfig
 
 # Installer-critical facilities are built in. Keep the upstream Amiga
 # defconfig as the compatibility baseline and only force what the m68kDeb
-# bootstrap contract needs.
+# bootstrap contract needs. The 8 MiB Zorro II bootstrap profile omits
+# disk, SCSI, framebuffer and floppy drivers until RAM expansion is resolved;
+# the initramfs console uses the Amiga serial port.
 "$SRC/scripts/config" --file "$SRC/.config" \
   --enable BLK_DEV_INITRD \
   --enable DEVTMPFS \
@@ -275,7 +277,7 @@ make -C "$SRC" ARCH=m68k CROSS_COMPILE=m68k-linux-gnu- amiga_defconfig
   --enable RD_GZIP \
   --enable PROC_FS \
   --enable SYSFS \
-  --enable EXT4_FS \
+  --disable EXT4_FS \
   --enable M68KFPU_EMU \
   --enable BINFMT_ELF \
   --enable BINFMT_SCRIPT \
@@ -292,6 +294,9 @@ make -C "$SRC" ARCH=m68k CROSS_COMPILE=m68k-linux-gnu- amiga_defconfig
   --disable CIFS \
   --disable ISO9660_FS \
   --disable UDF_FS \
+  --disable SCSI \
+  --disable FB \
+  --disable AMIGA_FLOPPY \
   --disable DRM \
   --disable SOUND \
   --disable NET
