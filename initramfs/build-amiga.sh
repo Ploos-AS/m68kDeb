@@ -51,7 +51,7 @@ chmod 0755 "$ROOT/bin/busybox"
 # Fail before packaging if this is not an m68k ELF executable.
 file "$ROOT/bin/busybox"
 readelf -h "$ROOT/bin/busybox"
-if ! readelf -h "$ROOT/bin/busybox" | grep -Eq "Machine:[[:space:]]*Motorola"; then
+if ! readelf -h "$ROOT/bin/busybox" | grep -Eq "Machine:[[:space:]]*(MC68000|Motorola)"; then
   echo "FAIL: selected BusyBox is not a Motorola m68k ELF executable" >&2
   exit 1
 fi
