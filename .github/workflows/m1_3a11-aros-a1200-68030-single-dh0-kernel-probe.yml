@@ -34,7 +34,7 @@ jobs:
       - name: Build pinned Amiga kernel and fetch amiboot
         run: |
           sh kernel/build-amiga.sh
-          sh initramfs/build-amiga.sh
+          M68KDEB_TINY_INIT=1 sh initramfs/build-amiga.sh
           sh platforms/amiga/fetch-amiboot.sh
           mkdir -p out/m68kdeb-amiga
           cp out/amiboot/amiboot out/m68kdeb-amiga/amiboot
