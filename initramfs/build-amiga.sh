@@ -61,6 +61,32 @@ file "$ROOT/bin/busybox" || true
 readelf -h "$ROOT/bin/busybox" || true
 readelf -A "$ROOT/bin/busybox" || true
 
+# Minimal PID 1 probe for the 8 MiB profile. This intentionally bypasses
+# BusyBox to separate ELF/userspace handoff from full initramfs memory use.
+if [ "${M68KDEB_TINY_INIT:-0}" = 1 ]; then
+  command -v m68k-linux-gnu-gcc >/dev/null
+  rm -f "$ROOT/bin/busybox"
+  cat > "$OUT/tiny-init.S" <<'ASM'
+  .text
+  .globl _start
+_start:
+  moveq #4,%d0
+  moveq #1,%d1
+  lea message,%a0
+  move.l %a0,%d2
+  move.l #message_end-message,%d3
+  trap #0
+1:
+  bra.s 1b
+  .data
+message:
+  .ascii "M1.3 bootstrap reached userspace.\\n"
+message_end:
+ASM
+  m68k-linux-gnu-gcc -nostdlib -static -no-pie -Wl,-e,_start -o "$ROOT/init" "$OUT/tiny-init.S"
+  chmod 0755 "$ROOT/init"
+  file "$ROOT/init"
+else
 for app in sh mount umount mkdir cat echo uname dmesg sleep poweroff reboot ls; do
   ln -s busybox "$ROOT/bin/$app"
 done
@@ -87,6 +113,7 @@ echo "Dropping to rescue shell; installer core arrives in later M1 milestones."
 exec /bin/sh
 EOF
 chmod 0755 "$ROOT/init"
+fi
 
 (
   cd "$ROOT"
