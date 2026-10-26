@@ -83,7 +83,7 @@ jobs:
                   echo "M1.3a.11: sent Return to amiboot interactive continue prompt"
                 fi
               fi
-              if grep -Fq "M1.3 bootstrap reached userspace." out/m1-3a11/serial.log 2>/dev/null; then
+              if grep -Fq "M1.3 tiny PID1 reached userspace." out/m1-3a11/serial.log 2>/dev/null; then
                 linux=1
                 break
               fi
@@ -147,7 +147,7 @@ jobs:
             echo "startup_marker=observed"
             echo "kernel_invocation_marker=observed"
             echo "linux_kernel_marker=observed"
-            echo "initramfs_userspace_marker=observed"
+            echo "initramfs_userspace_marker=tiny_pid1_observed"
             sha256sum out/m1-3a11/aros-root/amiboot out/m1-3a11/aros-root/vmlinux-m68k-amiga out/m1-3a11/aros-root/initramfs-m68kdeb.gz
             fs-uae --version | head -n 1 | sed 's/^/fs_uae=/'
           } > out/m1-3a11/RESULT.txt
