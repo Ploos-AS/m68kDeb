@@ -90,12 +90,8 @@ chmod 0755 "$ROOT/init"
 
 (
   cd "$ROOT"
-  find . -print | cpio -o -H newc 2>/dev/null
-) > "$OUT/initramfs-m68kdeb.cpio"
-# The 8 MiB bootstrap avoids the gzip decompressor during rootfs extraction.
-# Preserve the historical bundle filename until the caller contract is migrated.
-cp "$OUT/initramfs-m68kdeb.cpio" "$OUT/initramfs-m68kdeb.gz"
-file "$OUT/initramfs-m68kdeb.gz"
+  find . -print | cpio -o -H newc 2>/dev/null | gzip -9
+) > "$OUT/initramfs-m68kdeb.gz"
 
 sha256sum "$DEB" > "$OUT/busybox-static.SHA256"
 sha256sum "$OUT/initramfs-m68kdeb.gz" > "$OUT/SHA256SUMS"
