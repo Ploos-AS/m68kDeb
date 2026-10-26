@@ -80,7 +80,7 @@ _start:
   bra.s 1b
   .data
 message:
-  .ascii "M1.3 bootstrap reached userspace.\\n"
+  .ascii "M1.3 tiny PID1 reached userspace.\\n"
 message_end:
 ASM
   m68k-linux-gnu-gcc -nostdlib -static -no-pie -Wl,-e,_start -o "$ROOT/init" "$OUT/tiny-init.S"
